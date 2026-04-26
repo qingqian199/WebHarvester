@@ -1,0 +1,10 @@
+node_modules/
+
+dist/
+release/
+output/
+sessions/
+*.log
+.DS_Store
+*.exe
+.env

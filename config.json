@@ -1,0 +1,17 @@
+{
+  "headless": true,
+  "browserMask": {
+    "viewport": { "width": 1920, "height": 1080 },
+    "minDelayMs": 300,
+    "maxDelayMs": 800,
+    "enableHardwareMask": true
+  },
+  "actionTimeoutMs": 15000,
+  "taskTimeoutMs": 60000,
+  "captureAllNetwork": true,
+  "autoExtractAuth": true,
+  "autoExtractHiddenField": true,
+  "outputMd": true,
+  "outputCsv": true,
+  "outputDir": "./output"
+}

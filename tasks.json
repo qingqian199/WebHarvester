@@ -1,0 +1,8 @@
+{
+  "tasks": [
+    {
+      "targetUrl": "https://example.com",
+      "networkCapture": { "captureAll": true }
+    }
+  ]
+}

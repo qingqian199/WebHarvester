@@ -1,0 +1,33 @@
+{
+  "name": "web-harvester",
+  "version": "1.0.0",
+  "author": "qingqian",
+  "license": "MIT",
+  "description": "工程化Web逆向抓包、页面资产采集工具，低硬件适配+模块化解耦",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "batch": "ts-node src/index.ts --batch",
+    "web": "ts-node src/index.ts --web",
+    "build": "rimraf dist && tsc",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "pkg-win": "pkg dist/index.js --targets=node20-win-x64 --output=WebHarvester.exe"
+  },
+  "dependencies": {
+    "glob": "^13.0.6",
+    "inquirer": "^9.2.20",
+    "node-fetch": "^2.7.0",
+    "playwright": "^1.44.0"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^10.2.1",
+    "rimraf": "^6.1.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

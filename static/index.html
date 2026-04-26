@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+ <meta charset="UTF-8">
+ <title>Web资产采集控制台</title>
+ <link rel="stylesheet" href="style.css">
+</head>
+<body>
+ <div class="container">
+ <h1>🌐 Web 逆向资产采集工具</h1>
+ <div class="card">
+ <h3>单站点快速采集</h3>
+ <input type="text" id="urlInput" placeholder="输入目标网址">
+ <button onclick="runSingle()">开始采集</button>
+ </div>
+ <div class="card">
+ <h3>批量任务采集</h3>
+ <p>读取根目录 tasks.json 任务列表</p>
+ <button onclick="runBatch()">执行批量采集</button>
+ </div>
+ <div class="card">
+ <h3>运行日志</h3>
+ <div id="logBox"></div>
+ </div>
+ </div>
+ <script src="api.js"></script>
+</body>
+</html>

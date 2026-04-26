@@ -1,0 +1,9 @@
+export const DEFAULT_ACTION_TIMEOUT_MS = 15000;
+export const NETWORK_IDLE_WAIT_MS = 800;
+export const SCRIPT_SAFE_DELAY_MS = 50;
+export const MIN_REQUEST_DELAY = 80;
+export const MAX_REQUEST_DELAY = 200;
+export const MAX_INTERACTIVE_ELEMENT_LIMIT = 12;
+export const MAX_API_LIST_LIMIT = 8;
+export const COOKIE_INSECURE_SCORE_DEDUCT = 5;
+export const RISK_ITEM_SCORE_DEDUCT = 8;
