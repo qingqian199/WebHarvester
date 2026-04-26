@@ -1,48 +1,52 @@
-# WebHarvester 项目说明
+# WebHarvester v1.0.1
+🚀 基于 Playwright + TypeScript 构建的企业级网页资产采集、逆向分析与安全审计工具
 
-## 项目简介
-本项目是一款**工程化的 Web 逆向抓包与资产采集工具**，旨在兼容低硬件配置并提供模块化、可扩展的架构。
+## 项目介绍
+WebHarvester 是一款模块化、工程化、低硬件依赖的网页数据采集工具，专为前端逆向、接口分析、安全测试、自动化采集场景设计。
 
-## 快速运行
+## 核心功能
+- ✅ 全量网络请求抓包（HAR 标准导出）
+- ✅ XHR / Fetch 智能过滤，自动识别业务 API
+- ✅ 支持 Vue / React 单页应用（SPA）采集
+- ✅ Cookie / LocalStorage / SessionStorage 全量快照
+- ✅ DOM 元素、隐藏字段、授权令牌自动提取
+- ✅ Markdown / CSV / JSON 多格式报告生成
+- ✅ 内置安全审计、风险检测、敏感信息监测
+- ✅ 真人行为模拟、浏览器指纹伪装、反检测
+- ✅ 交互式 CLI + 可视化 Web 控制台
+- ✅ 批量任务、会话持久化、配置化驱动
+- ✅ Docker 容器化 + CI 自动化支持
+
+## 技术栈
+- TypeScript
+- Playwright
+- 模块化架构
+- 端口-适配器设计模式
+- 工程化 Lint / 测试 / 构建体系
+
+## 适用场景
+- 前端接口逆向分析
+- 自动化数据采集
+- 安全渗透测试辅助
+- 网站资产梳理
+- 爬虫协议分析
+- 单页应用（SPA）深度采集
+
+## 快速开始
 ```bash
 npm install
-npm run start      # 交互式单站点采集
-npm run batch      # 批量任务采集（读取 tasks.json）
-npm run web        # �启用可视化面板（http://localhost:3000）
+npx playwright install chromium
+npm start
 ```
 
-## 关键特性
-- **低硬件适配**：通过动态指纹、浏览器遮蔽等手段在低配机器上流畅运行。
-- **模块化解耦**：核心层、适配层、工具层、业务层明确分层，便于维护和二次开发。
-- **结构化日志**：统一 JSON 格式日志（`JsonLogger`），便于日志聚合平台采集。
-- **安全沙箱**：执行用户脚本前会进行关键 API 替换，防止恶意代码泄露信息。
-- **自动化输出**：支持 Markdown、CSV、HAR、AI 精简报告、Security Audit 报告等多种输出格式。
-- **单元测试 + CI**：使用 Jest 编写测试，GitHub Actions 自动化执行 lint、build。
-- **容器化**：提供轻量 Docker 镜像，`docker build` 即可部署。
+## 项目亮点
+- 纯 TypeScript 强类型安全
+- 高内聚低耦合，易于扩展
+- 零耦合架构，可替换浏览器引擎
+- 开箱即用，无需复杂配置
+- 支持二次开发、商业使用、课程设计
 
-## 项目结构（关键目录）
-```
-WebHarvester/
-├─ src/
-│  ├─ core/          # 核心业务模型、接口、服务
-│  ├─ adapters/      # 浏览器、存储、会话等外部适配器实现
-│  ├─ utils/         # 通用工具库（日志、常量、脚本沙箱等）
-│  ├─ tests/         # 单元测试
-│  └─ cli/           # 交互式 CLI 实现
-├─ .eslintrc.json    # ESLint 配置
-├─ jest.config.js    # Jest 配置
-├─ Dockerfile        # Docker 镜像构建脚本
-├─ package.json      # npm 配置及脚本
-└─ README.md         # 项目文档
+## 版本
+v1.0.1（稳定版，可生产使用）
 ```
 
-## 代码质量 & CI
-- `npm run lint` 检查代码风格。
-- `npm run test` 运行测试并生成覆盖报告。
-- GitHub Actions 自动在每次 PR/Push 时执行 lint、build，确保代码质量。
-
-## 联系 & 贡献
-如需帮助或想贡献代码，请提交 Issue 或 Pull Request，欢迎一起完善！
-
----
-*此文档随项目更新而迭代*
