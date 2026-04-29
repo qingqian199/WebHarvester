@@ -25,7 +25,7 @@ export async function generateDefaultTasksFile(): Promise<void> {
 export function getSafeDomainName(url: string): string {
   try {
     const host = new URL(url).hostname;
-    return host.replace(/[^a-zA-Z0-9_\-]/g, "_");
+    return host.replace(/[^a-zA-Z0-9_-]/g, "_");
   } catch {
     return "unknown_site";
   }

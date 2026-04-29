@@ -73,7 +73,7 @@ export class PlaywrightAdapter implements IBrowserAdapter {
           })),
         );
         els.forEach((item) => res.push({ selector: s, ...item }));
-      } catch (e) {
+      } catch {
         this.logger.warn("元素查询失败", { selector: s });
       }
     }

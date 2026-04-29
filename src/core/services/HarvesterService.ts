@@ -52,7 +52,7 @@ export class HarvesterService {
           if (typeof s === "string") continue;
           try {
             jsVariables[s.alias] = await this.browser.executeScript(s.script);
-          } catch (e) {
+          } catch {
             this.logger.warn("脚本执行失败", { alias: s.alias });
           }
         }

@@ -1,11 +1,10 @@
 import { chromium, Browser, BrowserContext, Page, Request, Response, BrowserContextOptions } from "playwright";
 import { ILogger } from "../core/ports/ILogger";
-import { BROWSER_MASK_CONFIG, DEFAULT_ACTION_TIMEOUT_MS } from "../core/config/index";
+import { DEFAULT_ACTION_TIMEOUT_MS } from "../core/config/index";
 import { FeatureFlags } from "../core/features";
 import { RealisticFingerprintProvider } from "./RealisticFingerprintProvider";
 import { SessionState } from "../core/ports/ISessionManager";
 import { NetworkRequest, PageLoadMetrics } from "../core/models";
-import { LOGIN_PAGE_LOAD_TIMEOUT_MS } from "../core/constants/GlobalConstant";
 
 const ANTI_DETECT_PLATFORM = "Win32";
 const NETWORK_CAPTURE_TYPES = ["xhr", "fetch"];

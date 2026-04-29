@@ -16,7 +16,7 @@ export class FileSessionManager implements ISessionManager {
   }
 
   private getProfilePath(name: string): string {
-    const safeName = name.replace(/[^a-zA-Z0-9_\-]/g, "_");
+    const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
     return path.join(SESSION_ROOT, `${safeName}.session.json`);
   }
 
@@ -53,7 +53,6 @@ export class FileSessionManager implements ISessionManager {
     const filePath = this.getProfilePath(profileName);
     try {
       await fs.unlink(filePath);
-    } catch {
-    }
+    } catch {}
   }
 }

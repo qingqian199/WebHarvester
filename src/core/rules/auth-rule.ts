@@ -17,15 +17,15 @@ export function extractAuthHeaders(headers: Record<string, string>): Record<stri
   return res;
 }
 
-function extractTokensFromObject(obj: any, prefix = ''): Record<string, string> {
+function extractTokensFromObject(obj: any, prefix = ""): Record<string, string> {
   const res: Record<string, string> = {};
-  if (!obj || typeof obj !== 'object') return res;
+  if (!obj || typeof obj !== "object") return res;
   for (const [k, v] of Object.entries(obj)) {
     const fullKey = prefix ? `${prefix}.${k}` : k;
     if (AUTH_STORAGE_KEYWORDS.some(w => fullKey.toLowerCase().includes(w))) {
-      res[fullKey] = typeof v === 'string' ? v : JSON.stringify(v);
+      res[fullKey] = typeof v === "string" ? v : JSON.stringify(v);
     }
-    if (v && typeof v === 'object') {
+    if (v && typeof v === "object") {
       Object.assign(res, extractTokensFromObject(v, fullKey));
     }
   }
@@ -33,13 +33,13 @@ function extractTokensFromObject(obj: any, prefix = ''): Record<string, string> 
 }
 
 export function extractAuthStorage(storage: Record<string, string>): Record<string, string> {
-  let res: Record<string, string> = {};
+  const res: Record<string, string> = {};
   for (const [k, v] of Object.entries(storage)) {
     const lk = k.toLowerCase();
     if (AUTH_STORAGE_KEYWORDS.some(w => lk.includes(w))) res[k] = v;
     try {
       const parsed = JSON.parse(v);
-      if (parsed && typeof parsed === 'object') {
+      if (parsed && typeof parsed === "object") {
         Object.assign(res, extractTokensFromObject(parsed, k));
       }
     } catch {

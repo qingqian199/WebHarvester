@@ -1,4 +1,4 @@
-import { HarvestResult, NetworkRequest } from "../../core/models";
+import { HarvestResult } from "../../core/models";
 
 interface HarEntryTimings {
   send: number;
@@ -96,7 +96,7 @@ export function buildHarFromResult(result: HarvestResult): HarFile {
         ? req.responseBody
         : JSON.stringify(req.responseBody);
       entry.response.content.text = text;
-      entry.response.content.size = Buffer.byteLength(text, 'utf-8');
+      entry.response.content.size = Buffer.byteLength(text, "utf-8");
     }
 
     return entry;

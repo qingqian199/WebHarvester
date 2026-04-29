@@ -38,16 +38,16 @@ export class ResultAnalyzer {
         const sessionStorageKeys = Object.keys(storage.sessionStorage);
         const cookiesNames = storage.cookies.map(c => c.name);
 
-        const authTokens: AnalysisSummary['authTokens'] = [];
-        const sensitiveKeywords = ['token', 'access_token', 'refresh_token', 'auth', 'session', 'jwt', 'secret', 'key'];
+        const authTokens: AnalysisSummary["authTokens"] = [];
+        const sensitiveKeywords = ["token", "access_token", "refresh_token", "auth", "session", "jwt", "secret", "key"];
         for (const [key, value] of Object.entries(storage.localStorage)) {
             if (sensitiveKeywords.some(k => key.toLowerCase().includes(k))) {
-                authTokens.push({ name: `localStorage.${key}`, value: value.slice(0, 30) + '...' });
+                authTokens.push({ name: `localStorage.${key}`, value: value.slice(0, 30) + "..." });
             }
         }
         for (const [key, value] of Object.entries(storage.sessionStorage)) {
             if (sensitiveKeywords.some(k => key.toLowerCase().includes(k))) {
-                authTokens.push({ name: `sessionStorage.${key}`, value: value.slice(0, 30) + '...' });
+                authTokens.push({ name: `sessionStorage.${key}`, value: value.slice(0, 30) + "..." });
             }
         }
 
@@ -66,8 +66,8 @@ export class ResultAnalyzer {
             hiddenElements: hiddenList.map(el => ({
                 selector: el.selector,
                 tagName: el.tagName,
-                name: el.attributes.name || '',
-                value: el.attributes.value || '',
+                name: el.attributes.name || "",
+                value: el.attributes.value || "",
             })),
             storageKeys: {
                 localStorage: localStorageKeys,
@@ -78,7 +78,7 @@ export class ResultAnalyzer {
         };
     }
 
-    static generateHtmlReport(summary: AnalysisSummary, originalResult?: HarvestResult): string {
+    static generateHtmlReport(summary: AnalysisSummary, _originalResult?: HarvestResult): string {
         const durationSec = (summary.durationMs / 1000).toFixed(2);
         const started = new Date(summary.startedAt).toLocaleString();
 
@@ -105,32 +105,32 @@ export class ResultAnalyzer {
   <div class="card">
     <h2>基本信息</h2>
     <p>🎯 目标：<a href="${summary.targetUrl}" target="_blank">${summary.targetUrl}</a></p>
-    <p>🕒 采集时间：${started}　⏱️ 耗时：${durationSec}秒</p>
-    <p>📡 总请求数：${summary.totalRequests}　🔌 API 接口数：${summary.apiRequests.length}</p>
+    <p>🕒 采集时间：${started} ⏱️ 耗时：${durationSec}秒</p>
+    <p>📡 总请求数：${summary.totalRequests} 🔌 API 接口数：${summary.apiRequests.length}</p>
   </div>`;
 
-        html += `<div class="card"><h2>核心 API 请求</h2>`;
+        html += "<div class=\"card\"><h2>核心 API 请求</h2>";
         if (summary.apiRequests.length === 0) {
-            html += `<p>未检测到 API 请求</p>`;
+            html += "<p>未检测到 API 请求</p>";
         } else {
-            html += `<table><tr><th>方法</th><th>URL</th><th>状态</th></tr>`;
+            html += "<table><tr><th>方法</th><th>URL</th><th>状态</th></tr>";
             for (const api of summary.apiRequests) {
-                const badgeClass = api.method === 'POST' ? 'badge-post' : 'badge-get';
+                const badgeClass = api.method === "POST" ? "badge-post" : "badge-get";
                 html += `<tr>
           <td><span class="badge ${badgeClass}">${api.method}</span></td>
           <td style="word-break:break-all">${api.url}</td>
           <td>${api.status}</td>
         </tr>`;
             }
-            html += `</table>`;
+            html += "</table>";
         }
-        html += `</div>`;
+        html += "</div>";
 
-        html += `<div class="card"><h2>隐藏/安全字段</h2>`;
+        html += "<div class=\"card\"><h2>隐藏/安全字段</h2>";
         if (summary.hiddenElements.length === 0) {
-            html += `<p>未发现隐藏字段</p>`;
+            html += "<p>未发现隐藏字段</p>";
         } else {
-            html += `<table><tr><th>选择器</th><th>标签</th><th>名称</th><th>值</th></tr>`;
+            html += "<table><tr><th>选择器</th><th>标签</th><th>名称</th><th>值</th></tr>";
             for (const el of summary.hiddenElements) {
                 html += `<tr>
           <td>${el.selector}</td>
@@ -139,30 +139,30 @@ export class ResultAnalyzer {
           <td>${el.value}</td>
         </tr>`;
             }
-            html += `</table>`;
+            html += "</table>";
         }
-        html += `</div>`;
+        html += "</div>";
 
         html += `<div class="card"><h2>存储快照</h2>
     <h3>Cookies (${summary.storageKeys.cookies.length})</h3>
-    <p>${summary.storageKeys.cookies.join(', ') || '无'}</p>
+    <p>${summary.storageKeys.cookies.join(", ") || "无"}</p>
     <h3>localStorage 键值</h3>
-    <p>${summary.storageKeys.localStorage.join(', ') || '无'}</p>
+    <p>${summary.storageKeys.localStorage.join(", ") || "无"}</p>
     <h3>sessionStorage 键值</h3>
-    <p>${summary.storageKeys.sessionStorage.join(', ') || '无'}</p>
+    <p>${summary.storageKeys.sessionStorage.join(", ") || "无"}</p>
     </div>`;
 
-        html += `<div class="card"><h2>检测到的认证信息</h2>`;
+        html += "<div class=\"card\"><h2>检测到的认证信息</h2>";
         if (summary.authTokens.length === 0) {
-            html += `<p>未提取到明显的令牌</p>`;
+            html += "<p>未提取到明显的令牌</p>";
         } else {
             for (const t of summary.authTokens) {
                 html += `<p><span class="token">${t.name}</span> = ${t.value}</p>`;
             }
         }
-        html += `</div>`;
+        html += "</div>";
 
-        html += `<footer style="text-align:center;margin-top:20px;color:#666">WebHarvester v1.0.1 自动生成</footer></body></html>`;
+        html += "<footer style=\"text-align:center;margin-top:20px;color:#666\">WebHarvester v1.0.1 自动生成</footer></body></html>";
         return html;
     }
 }

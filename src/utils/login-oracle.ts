@@ -9,19 +9,19 @@ import { filterApiRequests } from "../core/rules";
 import { captureSessionFromPage } from "./session-helper";
 
 const LOGIN_TRIGGER_SELECTORS = [
-  'a:has-text("登录"), a:has-text("登入")',
-  'button:has-text("登录"), button:has-text("登入")',
-  'div:has-text("登录"), span:has-text("登录")',
-  '.login-btn, .header-login, [class*="login"], [class*="signin"]',
-  '.bili-header__bar-login-btn, .header-login-btn',
-  '[class*="header"] [class*="login"], [class*="header"] [class*="user"]',
+  "a:has-text(\"登录\"), a:has-text(\"登入\")",
+  "button:has-text(\"登录\"), button:has-text(\"登入\")",
+  "div:has-text(\"登录\"), span:has-text(\"登录\")",
+  ".login-btn, .header-login, [class*=\"login\"], [class*=\"signin\"]",
+  ".bili-header__bar-login-btn, .header-login-btn",
+  "[class*=\"header\"] [class*=\"login\"], [class*=\"header\"] [class*=\"user\"]",
 ];
 
 const PASSWORD_TAB_SELECTORS = [
-  'span:has-text("密码登录"), div:has-text("密码登录")',
-  'span:has-text("账号登录"), div:has-text("账号登录")',
-  'li:has-text("密码登录"), li:has-text("账号登录")',
-  '.bili-mini-tab[data-type="password"], [class*="tab"]:has-text("密码")',
+  "span:has-text(\"密码登录\"), div:has-text(\"密码登录\")",
+  "span:has-text(\"账号登录\"), div:has-text(\"账号登录\")",
+  "li:has-text(\"密码登录\"), li:has-text(\"账号登录\")",
+  ".bili-mini-tab[data-type=\"password\"], [class*=\"tab\"]:has-text(\"密码\")",
 ];
 
 const PAGE_LOAD_TIMEOUT = 60000;
@@ -168,7 +168,7 @@ export class LoginOracle {
     const clicked = await page.evaluate(() => {
       const keywords = ["登录", "登入", "sign in"];
       const allElements = document.querySelectorAll<HTMLElement>(
-        'a, button, div, span, li',
+        "a, button, div, span, li",
       );
       for (const el of allElements) {
         if (el.offsetWidth === 0 || el.offsetHeight === 0) continue;
@@ -197,7 +197,7 @@ export class LoginOracle {
     while (Date.now() - start < timeout) {
       const hasInput = await page.evaluate(() => {
         const inputs = document.querySelectorAll<HTMLInputElement>(
-          'input[type="email"], input[type="password"], input[autocomplete="username"], input[autocomplete="current-password"], input[type="tel"]',
+          "input[type=\"email\"], input[type=\"password\"], input[autocomplete=\"username\"], input[autocomplete=\"current-password\"], input[type=\"tel\"]",
         );
         return inputs.length >= 2;
       });
@@ -226,12 +226,12 @@ export class LoginOracle {
       `input[name="${fieldName}"]`,
       `input[id="${fieldName}"]`,
       `input[placeholder*="${fieldName}"]`,
-      'input[autocomplete="username"]',
-      'input[autocomplete="email"]',
-      'input[autocomplete="current-password"]',
-      'input[type="email"]',
-      'input[type="tel"]',
-      'input[type="password"]',
+      "input[autocomplete=\"username\"]",
+      "input[autocomplete=\"email\"]",
+      "input[autocomplete=\"current-password\"]",
+      "input[type=\"email\"]",
+      "input[type=\"tel\"]",
+      "input[type=\"password\"]",
     ];
 
     for (const sel of selectors) {
@@ -245,10 +245,10 @@ export class LoginOracle {
 
   private async tryClickSubmit(page: Page): Promise<void> {
     const submitSelectors = [
-      'button[type="submit"], input[type="submit"]',
-      'button:has-text("登录"), button:has-text("登入")',
-      'button:has-text("Sign in"), button:has-text("Log in")',
-      '.login-btn, [class*="submit"], [class*="login"] button',
+      "button[type=\"submit\"], input[type=\"submit\"]",
+      "button:has-text(\"登录\"), button:has-text(\"登入\")",
+      "button:has-text(\"Sign in\"), button:has-text(\"Log in\")",
+      ".login-btn, [class*=\"submit\"], [class*=\"login\"] button",
     ];
 
     for (const sel of submitSelectors) {

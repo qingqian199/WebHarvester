@@ -36,20 +36,20 @@ export class AuthGuard {
     const loginUrl = this.authConfig.loginUrl || targetLoginUrl;
     const verifyUrl = this.authConfig.verifyUrl || targetVerifyUrl;
 
-    let session = await this.sessionManager.load(profile);
+    const session = await this.sessionManager.load(profile);
     if (session) {
       this.logger.info(`📂 已找到会话文件 ${profile}，正在验证有效性...`);
       const isValid = await this.verifySession(session, verifyUrl);
       if (isValid) {
-        this.logger.info(`✅ 会话有效，跳过登录`);
+        this.logger.info("✅ 会话有效，跳过登录");
         return session;
       } else {
-        this.logger.warn(`⚠️ 会话已失效，需要重新登录`);
+        this.logger.warn("⚠️ 会话已失效，需要重新登录");
         await this.sessionManager.deleteProfile(profile);
       }
     }
 
-    this.logger.info(`🔓 正在启动有头浏览器，请手动登录...`);
+    this.logger.info("🔓 正在启动有头浏览器，请手动登录...");
     return await this.manualLogin(loginUrl, verifyUrl, profile);
   }
 

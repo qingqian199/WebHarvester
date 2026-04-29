@@ -6,7 +6,7 @@ export function generateApiCsv(requests: NetworkRequest[]): string {
   const header = ["请求方法", "状态码", "请求URL", "请求头数量", "请求体大小", "响应体大小"];
   const lines: string[] = [header.join(",")];
 
-  const escape = (s: string) => s.replace(/"/g, '""');
+  const escape = (s: string) => s.replace(/"/g, "\"\"");
   const getSize = (o: unknown) => {
     if (!o) return 0;
     try { return JSON.stringify(o).length; } catch { return 0; }

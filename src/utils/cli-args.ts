@@ -28,12 +28,13 @@ export function parseCliArgs(): CliRuntimeArgs {
       case "--save-session":
         opts.saveSession = true;
         break;
-      case "--output-format":
+      case "--output-format": {
         const fmt = args[++i];
         if (fmt === "json" || fmt === "md" || fmt === "csv" || fmt === "har" || fmt === "all") {
           opts.outputFormat = fmt;
         }
         break;
+      }
       case "--ai-mode":
         opts.aiMode = true;
         break;
