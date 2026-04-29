@@ -27,7 +27,7 @@ const PASSWORD_TAB_SELECTORS = [
 const PAGE_LOAD_TIMEOUT = 60000;
 const FIELD_DETECT_TIMEOUT = 15000;
 
-interface LoginIntel {
+export interface LoginIntel {
   formAction: string;
   method: string;
   csrfField?: { name: string; value: string };
@@ -37,6 +37,78 @@ interface LoginIntel {
   };
   captchaRequired: boolean;
   rawRequests: NetworkRequest[];
+}
+
+export function analyzeLoginForm(elements: ElementItem[], requests: NetworkRequest[]): LoginIntel {
+  const intel: LoginIntel = {
+    formAction: "",
+    method: "POST",
+    paramMap: { username: "username", password: "password" },
+    captchaRequired: false,
+    rawRequests: [],
+  };
+
+  for (const el of elements) {
+    if (el.tagName === "form") {
+      intel.formAction = el.attributes.action || "";
+      intel.method = (el.attributes.method || "POST").toUpperCase();
+      break;
+    }
+  }
+
+  const apiList = filterApiRequests(requests);
+  intel.rawRequests = apiList;
+
+  for (const el of elements) {
+    if (el.tagName !== "input") continue;
+    const name = (el.attributes.name || "").toLowerCase();
+    const id = (el.attributes.id || "").toLowerCase();
+    const type = (el.attributes.type || "text").toLowerCase();
+    const placeholder = (el.attributes.placeholder || "").toLowerCase();
+    const autocomplete = (el.attributes.autocomplete || "").toLowerCase();
+
+    const isUsernameField =
+      type === "email" ||
+      type === "tel" ||
+      autocomplete === "username" ||
+      autocomplete === "email" ||
+      ["user", "account", "email", "mail", "phone", "mobile", "login", "logon_id", "login_id", "手机", "邮箱", "账号", "用户名"].some(
+        (k) => name.includes(k) || id.includes(k) || placeholder.includes(k),
+      );
+
+    if (isUsernameField) {
+      intel.paramMap.username = el.attributes.name || el.attributes.id || "username";
+    }
+
+    if (type === "password" || autocomplete === "current-password") {
+      intel.paramMap.password = el.attributes.name || el.attributes.id || "password";
+    }
+
+    if (name.includes("csrf") || name.includes("_token")) {
+      intel.csrfField = { name: el.attributes.name, value: el.attributes.value || "" };
+    }
+
+    if (
+      (type === "text" || type === "number") &&
+      (name.includes("captcha") || name.includes("vercode") || placeholder.includes("captcha") || placeholder.includes("验证码"))
+    ) {
+      intel.captchaRequired = true;
+    }
+  }
+
+  if (!intel.formAction && apiList.length > 0) {
+    const loginPost = apiList.find(
+      (r) =>
+        r.method === "POST" &&
+        (r.url.includes("login") || r.url.includes("signin") || r.url.includes("passport")),
+    );
+    if (loginPost) {
+      intel.formAction = loginPost.url;
+      intel.method = "POST";
+    }
+  }
+
+  return intel;
 }
 
 export class LoginOracle {
@@ -284,75 +356,7 @@ export class LoginOracle {
   }
 
   private analyzeLoginForm(elements: ElementItem[], requests: NetworkRequest[]): LoginIntel {
-    const intel: LoginIntel = {
-      formAction: "",
-      method: "POST",
-      paramMap: { username: "username", password: "password" },
-      captchaRequired: false,
-      rawRequests: [],
-    };
-
-    for (const el of elements) {
-      if (el.tagName === "form") {
-        intel.formAction = el.attributes.action || "";
-        intel.method = (el.attributes.method || "POST").toUpperCase();
-        break;
-      }
-    }
-
-    const apiList = filterApiRequests(requests);
-    intel.rawRequests = apiList;
-
-    for (const el of elements) {
-      if (el.tagName !== "input") continue;
-      const name = (el.attributes.name || "").toLowerCase();
-      const id = (el.attributes.id || "").toLowerCase();
-      const type = (el.attributes.type || "text").toLowerCase();
-      const placeholder = (el.attributes.placeholder || "").toLowerCase();
-      const autocomplete = (el.attributes.autocomplete || "").toLowerCase();
-
-      const isUsernameField =
-        type === "email" ||
-        type === "tel" ||
-        autocomplete === "username" ||
-        autocomplete === "email" ||
-        ["user", "account", "email", "mail", "phone", "mobile", "login", "logon_id", "login_id"].some(
-          (k) => name.includes(k) || id.includes(k) || placeholder.includes(k),
-        );
-
-      if (isUsernameField) {
-        intel.paramMap.username = el.attributes.name || el.attributes.id || "username";
-      }
-
-      if (type === "password" || autocomplete === "current-password") {
-        intel.paramMap.password = el.attributes.name || el.attributes.id || "password";
-      }
-
-      if (name.includes("csrf") || name.includes("_token")) {
-        intel.csrfField = { name: el.attributes.name, value: el.attributes.value || "" };
-      }
-
-      if (
-        (type === "text" || type === "number") &&
-        (name.includes("captcha") || name.includes("vercode") || placeholder.includes("captcha") || placeholder.includes("验证码"))
-      ) {
-        intel.captchaRequired = true;
-      }
-    }
-
-    if (!intel.formAction && apiList.length > 0) {
-      const loginPost = apiList.find(
-        (r) =>
-          r.method === "POST" &&
-          (r.url.includes("login") || r.url.includes("signin") || r.url.includes("passport")),
-      );
-      if (loginPost) {
-        intel.formAction = loginPost.url;
-        intel.method = "POST";
-      }
-    }
-
-    return intel;
+    return analyzeLoginForm(elements, requests);
   }
 
   private async queryFormElements(page: Page): Promise<ElementItem[]> {
