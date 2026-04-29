@@ -15,6 +15,7 @@ export class BatchHarvestService {
     private readonly logger: ILogger,
     private readonly outputDir: string,
     concurrency?: number,
+    private readonly runItemOverride?: (task: BatchTaskItem, idx: number, total: number) => Promise<void>,
   ) {
     this.concurrency = Math.max(1, concurrency ?? DEFAULT_CONCURRENCY);
   }
@@ -51,17 +52,21 @@ export class BatchHarvestService {
   }
 
   private async runItem(task: BatchTaskItem, idx: number, total: number) {
-    const browser = new PlaywrightAdapter(this.logger);
-    const storage = new FileStorageAdapter(this.outputDir);
-    const svc = new HarvesterService(this.logger, browser, storage);
     try {
-      await svc.harvest({
-        targetUrl: task.targetUrl,
-        actions: task.actions,
-        elementSelectors: task.elementSelectors,
-        jsScripts: task.jsScripts,
-        networkCapture: task.networkCapture,
-      });
+      if (this.runItemOverride) {
+        await this.runItemOverride(task, idx, total);
+      } else {
+        const browser = new PlaywrightAdapter(this.logger);
+        const storage = new FileStorageAdapter(this.outputDir);
+        const svc = new HarvesterService(this.logger, browser, storage);
+        await svc.harvest({
+          targetUrl: task.targetUrl,
+          actions: task.actions,
+          elementSelectors: task.elementSelectors,
+          jsScripts: task.jsScripts,
+          networkCapture: task.networkCapture,
+        });
+      }
       this.logger.info(`[${idx}/${total}] 成功：${task.targetUrl}`);
     } catch (e) {
       this.logger.error(`[${idx}/${total}] 失败：${task.targetUrl}`, { err: (e as Error).message });
