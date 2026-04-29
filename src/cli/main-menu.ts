@@ -6,6 +6,7 @@ export type MenuAction =
     | { type: "single"; config: HarvestConfig; profile?: string; saveSession: boolean }
     | { type: "batch" }
     | { type: "login"; profile: string; loginUrl: string; verifyUrl: string }
+    | { type: "qrcode"; profile: string; loginUrl: string; verifyUrl: string }
     | { type: "analyze" }
     | { type: "web" }
     | { type: "exit" };
@@ -17,9 +18,10 @@ export async function startMainMenu(): Promise<MenuAction> {
             choices: [
                 { name: "1. 单站点快速采集", value: "single" },
                 { name: "2. 批量采集", value: "batch" },
-                { name: "3. 🔑 登录情报采集与自动登录", value: "login" },
-                { name: "4. 📊 分析已有采集结果", value: "analyze" },
-                { name: "5. 🌍 启动 Web 可视化面板", value: "web" },
+                { name: "3. 🔑 账号密码自动登录", value: "login" },
+                { name: "4. 📱 扫码登录（推荐 B站等 SPA）", value: "qrcode" },
+                { name: "5. 📊 分析已有采集结果", value: "analyze" },
+                { name: "6. 🌍 启动 Web 可视化面板", value: "web" },
                 { name: "0. 退出", value: "exit" }
             ]
         }
@@ -77,6 +79,15 @@ export async function startMainMenu(): Promise<MenuAction> {
             { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" }
         ]);
         return { type: "login", ...ans };
+    }
+
+    if (action === "qrcode") {
+        const ans = await inquirer.prompt([
+            { type: "input", name: "profile", message: "会话保存名称：" },
+            { type: "input", name: "loginUrl", message: "登录页面 URL：" },
+            { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" }
+        ]);
+        return { type: "qrcode", ...ans };
     }
 
     if (action === "analyze") return { type: "analyze" };

@@ -13,6 +13,8 @@ import { FeatureFlags } from "./core/features";
 import { startMainMenu, runAnalyzeFromMenu } from "./cli/main-menu";
 import { AuthGuard } from "./utils/auth-guard";
 import { LoginOracle } from "./utils/login-oracle";
+import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
+import { captureSessionFromPage } from "./utils/session-helper";
 import { SessionState } from "./core/ports/ISessionManager";
 
 let activeWebServer: WebServer | null = null;
@@ -88,6 +90,77 @@ async function bootstrap() {
       } else {
         console.log("❌ 自动登录失败，请检查账号密码或手动操作");
       }
+      console.log("");
+      continue;
+    }
+
+    if (action.type === "qrcode") {
+      const sessionManager = new FileSessionManager();
+      const lcm = new BrowserLifecycleManager(logger);
+
+      console.log("\n📱 扫码登录模式");
+      console.log("正在打开浏览器...\n");
+
+      try {
+        const page = await lcm.launch(action.loginUrl, false, undefined, "domcontentloaded", 60000);
+        await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
+        await page.waitForTimeout(2000);
+
+        await page.evaluate(() => {
+          const keywords = ["登录", "登入"];
+          const allEls = document.querySelectorAll<HTMLElement>("a, button, div, span, li");
+          for (const el of allEls) {
+            if (el.offsetWidth === 0 || el.offsetHeight === 0) continue;
+            const text = el.textContent?.trim().toLowerCase() || "";
+            if (keywords.some((k) => text === k)) { el.click(); return; }
+          }
+        });
+        await page.waitForTimeout(2000);
+
+        console.log("========================================");
+        console.log("📱 请使用手机 App 扫描屏幕上的二维码登录");
+        console.log("💡 登录成功后程序将自动检测并保存会话");
+        console.log("⏳ 等待扫码登录（最长 5 分钟）...");
+        console.log("========================================\n");
+
+        const QR_TIMEOUT = 5 * 60 * 1000;
+        const start = Date.now();
+        let loggedIn = false;
+
+        while (Date.now() - start < QR_TIMEOUT) {
+          await new Promise((r) => setTimeout(r, 2000));
+          try {
+            const currentUrl = page.url().split("?")[0];
+            const initialUrl = action.loginUrl.split("?")[0];
+            const urlChanged = currentUrl !== initialUrl;
+
+            const hasAvatar = await page.evaluate(() =>
+              document.querySelector(".bili-avatar, .user-avatar, .header-user-avatar, [class*='user-center']"),
+            );
+            const modalClosed = await page.evaluate(() => {
+              const modal = document.querySelector(".bili-mini-mask, .modal, [class*='overlay']");
+              return !modal;
+            });
+
+            if (urlChanged || hasAvatar || modalClosed) {
+              loggedIn = true;
+              break;
+            }
+          } catch {}
+        }
+
+        if (!loggedIn) throw new Error("扫码登录超时");
+
+        const session = await captureSessionFromPage(page, page.context());
+        await sessionManager.save(action.profile, session);
+        console.log(`✅ 扫码登录成功！会话已保存为 [${action.profile}]`);
+      } catch (e) {
+        logger.error("扫码登录失败", { err: (e as Error).message });
+        console.log("❌ 扫码登录失败或超时");
+      } finally {
+        await lcm.close();
+      }
+
       console.log("");
       continue;
     }
