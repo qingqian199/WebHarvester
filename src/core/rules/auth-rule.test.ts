@@ -30,6 +30,11 @@ describe("extractAuthHeaders", () => {
   it("returns empty object for empty input", () => {
     expect(extractAuthHeaders({})).toEqual({});
   });
+
+  it("ignores non-auth headers", () => {
+    const headers = { "content-type": "application/json", "x-request-id": "abc" };
+    expect(extractAuthHeaders(headers)).toEqual({});
+  });
 });
 
 describe("extractAuthStorage", () => {
@@ -73,6 +78,16 @@ describe("extractAuthStorage", () => {
 
   it("handles invalid JSON gracefully", () => {
     const storage = { config: "{invalid json}" };
+    expect(extractAuthStorage(storage)).toEqual({});
+  });
+
+  it("handles parsed JSON that is not an object", () => {
+    const storage = { config: JSON.stringify("just a string") };
+    expect(extractAuthStorage(storage)).toEqual({});
+  });
+
+  it("handles parsed JSON that is a number", () => {
+    const storage = { count: JSON.stringify(42) };
     expect(extractAuthStorage(storage)).toEqual({});
   });
 });
