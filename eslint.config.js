@@ -25,7 +25,7 @@ module.exports = tseslint.config(
         "warn",
         {
           ignoreArrayIndexes: true,
-          ignore: [0, 1, -1],
+          ignore: [0, 1, -1, 2, 10, 36, 200, 204, 400, 404, 500, 1000, 3000],
           ignoreDefaultValues: true,
           enforceConst: true,
         },

@@ -8,6 +8,7 @@ import { captureSessionFromPage } from "./session-helper";
 import {
   SESSION_VALIDATE_TIMEOUT_MS,
   MANUAL_LOGIN_TIMEOUT_MS,
+  LOGIN_SUCCESS_POLL_MS,
 } from "../core/constants/GlobalConstant";
 
 interface AuthConfig {
@@ -58,7 +59,7 @@ export class AuthGuard {
     try {
       const page = await browser.launch(verifyUrl, true, session);
       await page.waitForLoadState("networkidle", { timeout: SESSION_VALIDATE_TIMEOUT_MS }).catch(() => { });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(LOGIN_SUCCESS_POLL_MS);
 
       let loggedIn = false;
       if (this.authConfig.loggedInSelector) {
@@ -121,9 +122,10 @@ export class AuthGuard {
     ];
 
     while (Date.now() - startTime < MANUAL_LOGIN_TIMEOUT_MS) {
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, LOGIN_SUCCESS_POLL_MS));
       try {
-        const hasContent = await page.evaluate(() => document.body.innerText.length > 50);
+        const MIN_CONTENT_LENGTH = 50;
+        const hasContent = await page.evaluate(() => document.body.innerText.length > MIN_CONTENT_LENGTH);
         if (!hasContent) continue;
 
         const currentUrl = page.url();

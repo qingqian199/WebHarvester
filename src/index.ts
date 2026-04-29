@@ -16,6 +16,12 @@ import { LoginOracle } from "./utils/login-oracle";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
 import { captureSessionFromPage } from "./utils/session-helper";
 import { SessionState } from "./core/ports/ISessionManager";
+import {
+  PAGE_LOAD_FALLBACK_TIMEOUT_MS,
+  LOGIN_FORM_WAIT_MS,
+  LOGIN_SUCCESS_POLL_MS,
+  MANUAL_LOGIN_TIMEOUT_MS,
+} from "./core/constants/GlobalConstant";
 
 let activeWebServer: WebServer | null = null;
 
@@ -102,9 +108,9 @@ async function bootstrap() {
       console.log("正在打开浏览器...\n");
 
       try {
-        const page = await lcm.launch(action.loginUrl, false, undefined, "domcontentloaded", 60000);
-        await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
-        await page.waitForTimeout(2000);
+        const page = await lcm.launch(action.loginUrl, false, undefined, "domcontentloaded", MANUAL_LOGIN_TIMEOUT_MS);
+        await page.waitForLoadState("load", { timeout: PAGE_LOAD_FALLBACK_TIMEOUT_MS }).catch(() => {});
+        await page.waitForTimeout(LOGIN_FORM_WAIT_MS);
 
         await page.evaluate(() => {
           const keywords = ["登录", "登入"];
@@ -115,7 +121,7 @@ async function bootstrap() {
             if (keywords.some((k) => text === k)) { el.click(); return; }
           }
         });
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(LOGIN_FORM_WAIT_MS);
 
         console.log("========================================");
         console.log("📱 请使用手机 App 扫描屏幕上的二维码登录");
@@ -123,12 +129,11 @@ async function bootstrap() {
         console.log("⏳ 等待扫码登录（最长 5 分钟）...");
         console.log("========================================\n");
 
-        const QR_TIMEOUT = 5 * 60 * 1000;
         const start = Date.now();
         let loggedIn = false;
 
-        while (Date.now() - start < QR_TIMEOUT) {
-          await new Promise((r) => setTimeout(r, 2000));
+        while (Date.now() - start < MANUAL_LOGIN_TIMEOUT_MS) {
+          await new Promise((r) => setTimeout(r, LOGIN_SUCCESS_POLL_MS));
           try {
             const currentUrl = page.url().split("?")[0];
             const initialUrl = action.loginUrl.split("?")[0];

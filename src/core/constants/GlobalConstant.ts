@@ -1,3 +1,5 @@
+/* eslint-disable no-magic-numbers */
+
 export const DEFAULT_ACTION_TIMEOUT_MS = 15000;
 export const NETWORK_IDLE_WAIT_MS = 800;
 export const SCRIPT_SAFE_DELAY_MS = 50;
@@ -16,3 +18,17 @@ export const REQUEST_CAPTURE_EXTRA_WAIT_MS = 3000;
 
 export const LOGIN_FORM_WAIT_MS = 2000;
 export const LOGIN_SUBMIT_AFTER_WAIT_MS = 1500;
+export const LOGIN_MODAL_TRIGGER_WAIT_MS = 1500;
+export const LOGIN_POLL_INTERVAL_MS = 500;
+export const PAGE_LOAD_FALLBACK_TIMEOUT_MS = 10000;
+export const PASSWORD_TAB_SWITCH_DELAY_MS = 800;
+export const LOGIN_SUCCESS_POLL_MS = 2000;
+export const CAPTURE_AFTER_LOGIN_WAIT_MS = 3000;
+
+export const MAX_DISPLAY_ITEMS = 15;
+export const MAX_CAPTION_LENGTH = 80;  
+export const SECURITY_SCORE_HIGH = 85;
+export const SECURITY_SCORE_MEDIUM = 60;
+export const SECURITY_SCORE_LOW = 30;
+export const SECURITY_WEIGHT_RISK = 8;
+export const SECURITY_WEIGHT_COOKIE = 5;

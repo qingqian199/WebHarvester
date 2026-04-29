@@ -1,5 +1,12 @@
 import { HarvestResult } from "../../core/models";
 import { ISecurityAuditor, SecurityAuditReport } from "../../core/ports/ISecurityAudit";
+import {
+  SECURITY_SCORE_HIGH,
+  SECURITY_SCORE_MEDIUM,
+  SECURITY_SCORE_LOW,
+  SECURITY_WEIGHT_RISK,
+  SECURITY_WEIGHT_COOKIE,
+} from "../../core/constants/GlobalConstant";
 
 const SENSITIVE_REG = [
   /password/i,
@@ -63,7 +70,8 @@ export class SecurityAuditor implements ISecurityAuditor {
 
     const noAuthApi = result.networkRequests
       .filter(r => !r.requestHeaders?.authorization && !r.requestHeaders?.["x-token"]);
-    if (noAuthApi.length > 3) {
+    const NO_AUTH_API_THRESHOLD = 3;
+    if (noAuthApi.length > NO_AUTH_API_THRESHOLD) {
       riskItems.push({
         type: "no_auth_api",
         desc: `存在${noAuthApi.length}个无鉴权接口，越权风险高`,
@@ -71,15 +79,16 @@ export class SecurityAuditor implements ISecurityAuditor {
       });
     }
 
-    let score = 100;
-    score -= riskItems.length * 8;
-    score -= cookieCheck.length * 5;
+    const INITIAL_SCORE = 100;
+    let score = INITIAL_SCORE;
+    score -= riskItems.length * SECURITY_WEIGHT_RISK;
+    score -= cookieCheck.length * SECURITY_WEIGHT_COOKIE;
     score = Math.max(0, score);
 
     let level: SecurityAuditReport["level"] = "safe";
-    if (score < 30) level = "high";
-    else if (score < 60) level = "medium";
-    else if (score < 85) level = "low";
+    if (score < SECURITY_SCORE_LOW) level = "high";
+    else if (score < SECURITY_SCORE_MEDIUM) level = "medium";
+    else if (score < SECURITY_SCORE_HIGH) level = "low";
 
     return {
       score,

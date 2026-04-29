@@ -39,15 +39,16 @@ export class ResultAnalyzer {
         const cookiesNames = storage.cookies.map(c => c.name);
 
         const authTokens: AnalysisSummary["authTokens"] = [];
+        const TOKEN_DISPLAY_LIMIT = 30;
         const sensitiveKeywords = ["token", "access_token", "refresh_token", "auth", "session", "jwt", "secret", "key"];
         for (const [key, value] of Object.entries(storage.localStorage)) {
             if (sensitiveKeywords.some(k => key.toLowerCase().includes(k))) {
-                authTokens.push({ name: `localStorage.${key}`, value: value.slice(0, 30) + "..." });
+                authTokens.push({ name: `localStorage.${key}`, value: value.slice(0, TOKEN_DISPLAY_LIMIT) + "..." });
             }
         }
         for (const [key, value] of Object.entries(storage.sessionStorage)) {
             if (sensitiveKeywords.some(k => key.toLowerCase().includes(k))) {
-                authTokens.push({ name: `sessionStorage.${key}`, value: value.slice(0, 30) + "..." });
+                authTokens.push({ name: `sessionStorage.${key}`, value: value.slice(0, TOKEN_DISPLAY_LIMIT) + "..." });
             }
         }
 

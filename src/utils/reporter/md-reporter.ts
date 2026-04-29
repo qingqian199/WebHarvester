@@ -1,5 +1,6 @@
 import { HarvestResult } from "../../core/models";
 import { filterApiRequests, filterHiddenFields } from "../../core/rules";
+import { MAX_DISPLAY_ITEMS, MAX_CAPTION_LENGTH } from "../../core/constants/GlobalConstant";
 
 export function generateMarkdownReport(result: HarvestResult): string {
   const { traceId, targetUrl, networkRequests, elements, startedAt, finishedAt } = result;
@@ -27,16 +28,19 @@ export function generateMarkdownReport(result: HarvestResult): string {
     md += `| 方法 | 状态码 | 链接 |
 |------|--------|------|
 `;
-    for (const item of apiList.slice(0, 15)) {
-      const url = item.url.length > 80 ? item.url.slice(0, 80) + "..." : item.url;
+    for (const item of apiList.slice(0, MAX_DISPLAY_ITEMS)) {
+      const url = item.url.length > MAX_CAPTION_LENGTH ? item.url.slice(0, MAX_CAPTION_LENGTH) + "..." : item.url;
       md += `| ${item.method} | ${item.statusCode} | ${url} |
 `;
     }
-    if (apiList.length > 15) md += "\n> 仅展示前15条，完整请查看CSV文件\n";
+    if (apiList.length > MAX_DISPLAY_ITEMS) md += `\n> 仅展示前${MAX_DISPLAY_ITEMS}条，完整请查看CSV文件\n`;
   }
 
   md += "\n## 三、授权令牌信息\n\n";
-  const mask = (s: string) => s.length < 10 ? s : `${s.slice(0, 6)}****${s.slice(-4)}`;
+  const MASK_MIN_LEN = 10;
+  const MASK_PREFIX = 6;
+  const MASK_SUFFIX = -4;
+  const mask = (s: string) => s.length < MASK_MIN_LEN ? s : `${s.slice(0, MASK_PREFIX)}****${s.slice(MASK_SUFFIX)}`;
   if (Object.keys(authLocal).length || Object.keys(authSession).length) {
     for (const [k, v] of Object.entries(authLocal)) md += `- LocalStorage【${k}】：${mask(v)}\n`;
     for (const [k, v] of Object.entries(authSession)) md += `- SessionStorage【${k}】：${mask(v)}\n`;

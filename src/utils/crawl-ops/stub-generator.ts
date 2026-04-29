@@ -34,11 +34,12 @@ export class StubGenerator {
         ? this.pythonWbiTestCode(targetWrid, Number(targetWts))
         : this.jsWbiTestCode(targetWrid, Number(targetWts));
 
+    const KEY_PREVIEW_LEN = 8;
     return {
       language: lang,
       code,
       testCode,
-      description: `WBI 签名桩，基于 img_key: ${imgKey.slice(0, 8)}... sub_key: ${subKey.slice(0, 8)}...。测试用例来自 ${sampleReq.url}`,
+      description: `WBI 签名桩，基于 img_key: ${imgKey.slice(0, KEY_PREVIEW_LEN)}... sub_key: ${subKey.slice(0, KEY_PREVIEW_LEN)}...。测试用例来自 ${sampleReq.url}`,
     };
   }
 

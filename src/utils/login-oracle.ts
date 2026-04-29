@@ -7,6 +7,16 @@ import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { NetworkRequest, ElementItem } from "../core/models";
 import { filterApiRequests } from "../core/rules";
 import { captureSessionFromPage } from "./session-helper";
+import {
+  LOGIN_FORM_WAIT_MS,
+  LOGIN_MODAL_TRIGGER_WAIT_MS,
+  LOGIN_POLL_INTERVAL_MS,
+  PAGE_LOAD_FALLBACK_TIMEOUT_MS,
+  PASSWORD_TAB_SWITCH_DELAY_MS,
+  LOGIN_SUCCESS_POLL_MS,
+  CAPTURE_AFTER_LOGIN_WAIT_MS,
+  SESSION_VALIDATE_TIMEOUT_MS,
+} from "../core/constants/GlobalConstant";
 
 const LOGIN_TRIGGER_SELECTORS = [
   "a:has-text(\"登录\"), a:has-text(\"登入\")",
@@ -123,15 +133,15 @@ export class LoginOracle {
     const lcm = new BrowserLifecycleManager(this.logger);
     try {
       const page = await lcm.launch(loginUrl, false, undefined, "domcontentloaded", PAGE_LOAD_TIMEOUT);
-      await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
-      await page.waitForTimeout(2000);
+      await page.waitForLoadState("load", { timeout: PAGE_LOAD_FALLBACK_TIMEOUT_MS }).catch(() => {});
+      await page.waitForTimeout(LOGIN_FORM_WAIT_MS);
 
       await this.triggerLoginModal(page);
       const ok = await this.waitForLoginForm(page, FIELD_DETECT_TIMEOUT);
 
       let elements: ElementItem[] = [];
       if (ok) {
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(LOGIN_POLL_INTERVAL_MS);
         elements = await this.queryFormElements(page);
       } else {
         this.logger.warn("未检测到登录表单弹窗，将使用页面现有元素进行分析");
@@ -167,8 +177,8 @@ export class LoginOracle {
     const lcm = new BrowserLifecycleManager(this.logger);
     try {
       const page = await lcm.launch(loginUrl, false, undefined, "domcontentloaded", PAGE_LOAD_TIMEOUT);
-      await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
-      await page.waitForTimeout(2000);
+      await page.waitForLoadState("load", { timeout: PAGE_LOAD_FALLBACK_TIMEOUT_MS }).catch(() => {});
+      await page.waitForTimeout(LOGIN_FORM_WAIT_MS);
 
       await this.triggerLoginModal(page);
       const ok = await this.waitForLoginForm(page, FIELD_DETECT_TIMEOUT);
@@ -189,8 +199,8 @@ export class LoginOracle {
 
       await this.tryClickSubmit(page);
 
-      await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => { });
-      await page.waitForTimeout(3000);
+      await page.waitForLoadState("networkidle", { timeout: SESSION_VALIDATE_TIMEOUT_MS }).catch(() => { });
+      await page.waitForTimeout(CAPTURE_AFTER_LOGIN_WAIT_MS);
 
       const session = await this.tryCaptureSession(page, verifyUrl);
       await this.sessionManager.save(profile, session);
@@ -208,9 +218,9 @@ export class LoginOracle {
   async validateSession(session: SessionState, verifyUrl: string): Promise<boolean> {
     const browser = new BrowserLifecycleManager(this.logger);
     try {
-      const page = await browser.launch(verifyUrl, true, session, "domcontentloaded", 15000);
+      const page = await browser.launch(verifyUrl, true, session, "domcontentloaded", SESSION_VALIDATE_TIMEOUT_MS);
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(LOGIN_SUCCESS_POLL_MS);
 
       const stillNeedLogin = await page.evaluate(() => {
         const bodyText = document.body.innerText.toLowerCase();
@@ -232,7 +242,7 @@ export class LoginOracle {
       const btn = page.locator(sel).first();
       if ((await btn.count()) > 0 && (await btn.isVisible().catch(() => false))) {
         await btn.click().catch(() => {});
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(LOGIN_MODAL_TRIGGER_WAIT_MS);
         return;
       }
     }
@@ -261,7 +271,7 @@ export class LoginOracle {
       return false;
     });
 
-    if (clicked) await page.waitForTimeout(1500);
+    if (clicked) await page.waitForTimeout(LOGIN_MODAL_TRIGGER_WAIT_MS);
   }
 
   private async waitForLoginForm(page: Page, timeout: number): Promise<boolean> {
@@ -280,11 +290,11 @@ export class LoginOracle {
         const tab = page.locator(sel).first();
         if ((await tab.count()) > 0) {
           await tab.click().catch(() => {});
-          await page.waitForTimeout(800);
+          await page.waitForTimeout(PASSWORD_TAB_SWITCH_DELAY_MS);
         }
       }
 
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(LOGIN_POLL_INTERVAL_MS);
     }
     return false;
   }
@@ -340,7 +350,7 @@ export class LoginOracle {
       return captureSessionFromPage(page, page.context());
     }
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(CAPTURE_AFTER_LOGIN_WAIT_MS);
     const modalClosed = await page.evaluate(() => {
       const modal = document.querySelector(".modal, .dialog, [class*='overlay'], .bili-mini-mask");
       return !modal;
@@ -351,7 +361,7 @@ export class LoginOracle {
     }
 
     await page.goto(verifyUrl, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(LOGIN_SUCCESS_POLL_MS);
     return captureSessionFromPage(page, page.context());
   }
 

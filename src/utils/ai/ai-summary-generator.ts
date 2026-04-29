@@ -2,6 +2,11 @@ import { HarvestResult } from "../../core/models";
 import { filterApiRequests } from "../../core/rules";
 import { AiCompactObservation, IAiSummaryGenerator } from "../../core/ports/IAiSummary";
 
+const MAX_ENDPOINTS = 8;
+const MAX_INTERACTIVE_ELEMENTS = 12;
+const SPA_THRESHOLD = 15;
+const MAX_PARSE_FIELDS = 6;
+
 export class AiSummaryGenerator implements IAiSummaryGenerator {
   build(result: HarvestResult): AiCompactObservation {
     const apiList = filterApiRequests(result.networkRequests);
@@ -9,7 +14,7 @@ export class AiSummaryGenerator implements IAiSummaryGenerator {
 
     const summary = `页面共发起${result.networkRequests.length}条网络请求，业务接口${apiList.length}个，检测到${result.elements.length}个页面元素，包含授权令牌/缓存存储。`;
 
-    const endpoints = apiList.slice(0, 8).map(req => {
+    const endpoints = apiList.slice(0, MAX_ENDPOINTS).map(req => {
       let authType = "none";
       if (req.requestHeaders?.authorization) authType = "Bearer";
       if (req.requestHeaders?.["x-token"]) authType = "x-token";
@@ -23,7 +28,7 @@ export class AiSummaryGenerator implements IAiSummaryGenerator {
 
     const interactiveElements = result.elements
       .filter(el => ["input", "button", "form"].includes(el.tagName))
-      .slice(0, 12)
+      .slice(0, MAX_INTERACTIVE_ELEMENTS)
       .map((el, idx) => ({
         alias: `@e${idx + 1}`,
         type: el.tagName as "input" | "button" | "form",
@@ -36,7 +41,7 @@ export class AiSummaryGenerator implements IAiSummaryGenerator {
       pageMeta: {
         title: "Untitled",
         domain,
-        renderType: result.networkRequests.length > 15 ? "spa-dynamic" : "static"
+        renderType: result.networkRequests.length > SPA_THRESHOLD ? "spa-dynamic" : "static"
       },
       endpoints,
       interactiveElements,
@@ -53,7 +58,7 @@ export class AiSummaryGenerator implements IAiSummaryGenerator {
     if (!body) return [];
     try {
       const o = typeof body === "string" ? JSON.parse(body) : body;
-      return Object.keys(o as object).slice(0, 6);
+      return Object.keys(o as object).slice(0, MAX_PARSE_FIELDS);
     } catch {
       return [];
     }
