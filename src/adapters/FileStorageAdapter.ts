@@ -23,7 +23,7 @@ export class LocalFileSystem {
 }
 
 export class FileStorageAdapter implements IStorageAdapter {
-  private readonly fs = new LocalFileSystem();
+  private readonly fs: LocalFileSystem;
 
   constructor(
     private readonly outDir: string,
@@ -32,7 +32,10 @@ export class FileStorageAdapter implements IStorageAdapter {
       securityAudit?: boolean;
       stubLanguage?: "python" | "javascript";
     },
-  ) {}
+    fs?: LocalFileSystem,
+  ) {
+    this.fs = fs ?? new LocalFileSystem();
+  }
 
   async save(result: HarvestResult, outputFormat: string = "all"): Promise<void> {
     const domain = getSafeDomainName(result.targetUrl);
