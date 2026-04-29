@@ -123,33 +123,36 @@ export class AuthGuard {
     const startTime = Date.now();
     const initialUrl = page.url();
 
-    const LOGIN_SUCCESS_SELECTORS = [
-      ".user-avatar", ".header-user-avatar", ".user-name",
-      "[class*='user-center']", ".user-info", ".bili-avatar",
-      "[class*='logged-in']", "[class*='login-success']",
+    // 登录按钮的选择器（这些元素消失 = 登录成功）
+    const LOGIN_BTN_SELECTORS = [
+      "a[href*=\"login\"], button[class*=\"login\"], .login-btn, .header-login-btn",
+      "[class*=\"header\"] [class*=\"login\"]",
+      ".bili-header__bar-login-btn",
     ];
 
-    // 立即检查当前页面是否已处于登录状态
-    const alreadyLoggedIn = await page.evaluate((selectors) => {
-      return selectors.some((s) => document.querySelector(s));
-    }, LOGIN_SUCCESS_SELECTORS);
-    if (alreadyLoggedIn) return;
+    /** 页面是否仍包含可点击的登录按钮（未登录状态） */
+    const hasLoginBtn = async () => {
+      for (const sel of LOGIN_BTN_SELECTORS) {
+        const el = await page.$(sel);
+        if (el && (await el.isVisible())) return true;
+      }
+      return false;
+    };
+
+    // 立即检查：如果登录按钮不存在且页面内容正常，说明已处于登录态
+    if (!(await hasLoginBtn())) {
+      const hasContent = await page.evaluate(() => document.body.innerText.length > 50).catch(() => false);
+      if (hasContent) return;
+    }
 
     while (Date.now() - startTime < MANUAL_LOGIN_TIMEOUT_MS) {
       await new Promise((r) => setTimeout(r, LOGIN_SUCCESS_POLL_MS));
       try {
-        const MIN_CONTENT_LENGTH = 50;
-        const hasContent = await page.evaluate(() => document.body.innerText.length > MIN_CONTENT_LENGTH);
-        if (!hasContent) continue;
-
         const currentUrl = page.url();
         const urlChanged = currentUrl.split("?")[0] !== initialUrl.split("?")[0];
+        if (urlChanged) return;
 
-        const foundUserElement = await page.evaluate((selectors) => {
-          return selectors.some((s) => document.querySelector(s));
-        }, LOGIN_SUCCESS_SELECTORS);
-
-        if (urlChanged || foundUserElement) return;
+        if (!(await hasLoginBtn())) return;
       } catch {
         continue;
       }
