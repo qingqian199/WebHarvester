@@ -3,6 +3,7 @@ dist/
 output/
 sessions/
 coverage/
+benchmark/results/
 *.log
 .env
 .DS_Store
