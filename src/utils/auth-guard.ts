@@ -18,6 +18,7 @@ interface AuthConfig {
   loggedOutSelector?: string;
 }
 
+/** 登录态守卫。管理会话的加载、验证和刷新流程。 */
 export class AuthGuard {
   private logger: ILogger;
 
@@ -29,6 +30,11 @@ export class AuthGuard {
     this.logger = logger ?? new ConsoleLogger();
   }
 
+  /**
+   * 确保指定 profile 存在有效登录态。
+   * 优先加载已有会话并验证有效性；失效或不存在时打开浏览器等待手动登录。
+   * @returns 可用的 SessionState，失败返回 null。
+   */
   async ensureAuth(
     profile: string,
     targetLoginUrl: string,

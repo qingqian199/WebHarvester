@@ -37,7 +37,9 @@ const PASSWORD_TAB_SELECTORS = [
 const PAGE_LOAD_TIMEOUT = 60000;
 const FIELD_DETECT_TIMEOUT = 15000;
 
+/** 登录情报分析结果，包含表单探测信息和字段映射。 */
 export interface LoginIntel {
+  /** 检测到的表单提交 URL，未探测到时为空字符串。 */
   formAction: string;
   method: string;
   csrfField?: { name: string; value: string };
@@ -49,6 +51,10 @@ export interface LoginIntel {
   rawRequests: NetworkRequest[];
 }
 
+/**
+ * 分析页面元素和网络请求，提取登录表单信息。
+ * @returns 登录情报，包含表单 action、字段映射、CSRF 和验证码检测结果。
+ */
 export function analyzeLoginForm(elements: ElementItem[], requests: NetworkRequest[]): LoginIntel {
   const intel: LoginIntel = {
     formAction: "",
@@ -78,10 +84,8 @@ export function analyzeLoginForm(elements: ElementItem[], requests: NetworkReque
     const autocomplete = (el.attributes.autocomplete || "").toLowerCase();
 
     const isUsernameField =
-      type === "email" ||
-      type === "tel" ||
-      autocomplete === "username" ||
-      autocomplete === "email" ||
+      type === "email" || type === "tel" ||
+      autocomplete === "username" || autocomplete === "email" ||
       ["user", "account", "email", "mail", "phone", "mobile", "login", "logon_id", "login_id", "手机", "邮箱", "账号", "用户名"].some(
         (k) => name.includes(k) || id.includes(k) || placeholder.includes(k),
       );
@@ -108,8 +112,7 @@ export function analyzeLoginForm(elements: ElementItem[], requests: NetworkReque
 
   if (!intel.formAction && apiList.length > 0) {
     const loginPost = apiList.find(
-      (r) =>
-        r.method === "POST" &&
+      (r) => r.method === "POST" &&
         (r.url.includes("login") || r.url.includes("signin") || r.url.includes("passport")),
     );
     if (loginPost) {
@@ -121,6 +124,10 @@ export function analyzeLoginForm(elements: ElementItem[], requests: NetworkReque
   return intel;
 }
 
+/**
+ * 登录情报采集与自动执行器。
+ * 职责：探测登录表单结构 → 分析字段映射 → 执行自动登录或扫码登录。
+ */
 export class LoginOracle {
   private logger: ILogger;
 

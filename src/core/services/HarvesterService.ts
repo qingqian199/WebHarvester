@@ -11,6 +11,7 @@ import { BizError } from "../error/BizError";
 import { ErrorCode } from "../error/ErrorCode";
 import { filterApiRequests, filterHiddenFields, extractAuthStorage } from "../rules";
 
+/** 采集服务——核心编排器。协调浏览器自动化、数据提取、规则分析和结果存储。 */
 export class HarvesterService {
   constructor(
     private readonly logger: ILogger,
@@ -18,6 +19,16 @@ export class HarvesterService {
     private readonly storage: IStorageAdapter
   ) { }
 
+  /**
+   * 执行一次完整采集任务。
+   * @param config 采集配置（目标 URL、操作、选择器等）。
+   * @param outputFormat 输出格式（json/md/csv/har/all，默认 all）。
+   * @param needSaveSession 是否将本次登录态保存为会话。
+   * @param sessionManager 会话管理器实例。
+   * @param sessionProfile 会话保存名称。
+   * @param sessionState 预先注入的登录态。
+   * @throws {BizError} 配置为空或 URL 非法时抛出。
+   */
   async harvest(
     config: HarvestConfig,
     outputFormat: string = "all",
