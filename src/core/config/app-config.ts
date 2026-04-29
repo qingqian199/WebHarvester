@@ -17,6 +17,10 @@ export interface AppConfig {
     loggedInSelector?: string;
     loggedOutSelector?: string;
   };
+  crawlOps?: {
+    generateStubs: boolean;
+    stubLanguage: "python" | "javascript";
+  };
 }
 
 export interface BatchTaskItem {
@@ -48,4 +52,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   outputMd: true,
   outputCsv: true,
   outputDir: STORAGE_OUTPUT_DIR,
+  crawlOps: {
+    generateStubs: true,
+    stubLanguage: "python",
+  },
 };

@@ -13,6 +13,7 @@
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "test": "jest",
+    "gen-stub": "ts-node src/cli/gen-stub.ts",
     "pkg-win": "pkg dist/index.js --targets=node20-win-x64 --output=WebHarvester.exe"
   },
   "lint-staged": {

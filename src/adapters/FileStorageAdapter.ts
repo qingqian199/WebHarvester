@@ -10,6 +10,8 @@ import { generateApiCsv } from "../utils/reporter/csv-reporter";
 import { AiSummaryGenerator } from "../utils/ai/ai-summary-generator";
 import { SecurityAuditor } from "../utils/security/security-auditor";
 import { SecurityAuditReport } from "../core/ports/ISecurityAudit";
+import { AntiCrawlTagger } from "../utils/crawl-ops/anti-crawl-tagger";
+import { StubGenerator } from "../utils/crawl-ops/stub-generator";
 
 export class LocalFileSystem {
   async mkdir(p: string): Promise<void> {
@@ -23,7 +25,14 @@ export class LocalFileSystem {
 export class FileStorageAdapter implements IStorageAdapter {
   private readonly fs = new LocalFileSystem();
 
-  constructor(private readonly outDir: string, private readonly cliArgs?: { aiMode?: boolean; securityAudit?: boolean }) {}
+  constructor(
+    private readonly outDir: string,
+    private readonly cliArgs?: {
+      aiMode?: boolean;
+      securityAudit?: boolean;
+      stubLanguage?: "python" | "javascript";
+    },
+  ) {}
 
   async save(result: HarvestResult, outputFormat: string = "all"): Promise<void> {
     const domain = getSafeDomainName(result.targetUrl);
@@ -61,6 +70,28 @@ export class FileStorageAdapter implements IStorageAdapter {
       await this.fs.writeFile(path.join(dir, `${baseName}-security-audit.json`), JSON.stringify(auditReport, null, 2));
       const auditMd = this.buildAuditMarkdown(auditReport);
       await this.fs.writeFile(path.join(dir, `${baseName}-security-audit.md`), auditMd);
+    }
+
+    if (FeatureFlags.enableAntiCrawlTagging) {
+      const tagger = new AntiCrawlTagger();
+      const items = tagger.tag(result.networkRequests);
+      if (items.length > 0) {
+        await this.fs.writeFile(
+          path.join(dir, `${baseName}-anti-crawl.json`),
+          JSON.stringify(items, null, 2),
+        );
+      }
+    }
+
+    if (FeatureFlags.enableStubGeneration) {
+      const gen = new StubGenerator();
+      const lang = this.cliArgs?.stubLanguage ?? "python";
+      const wbiStub = gen.generateWbiStub(result, lang);
+      if (wbiStub) {
+        const ext = lang === "python" ? "py" : "js";
+        await this.fs.writeFile(path.join(dir, `${baseName}-wbi-stub.${ext}`), wbiStub.code);
+        await this.fs.writeFile(path.join(dir, `${baseName}-wbi-test.${ext}`), wbiStub.testCode);
+      }
     }
   }
 

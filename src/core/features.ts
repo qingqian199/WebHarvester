@@ -16,5 +16,8 @@ export const FeatureFlags = {
   enableDynamicFingerprint: true,
 
   enableAiCompactMode: true,
-  enableSecurityAudit: true
+  enableSecurityAudit: true,
+
+  enableAntiCrawlTagging: true,
+  enableStubGeneration: true
 };
