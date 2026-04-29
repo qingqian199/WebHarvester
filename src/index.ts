@@ -49,7 +49,7 @@ async function handleSingleAction(action: import("./cli/main-menu").MenuAction &
     const authGuard = new AuthGuard(sessionManager);
     sessionState = await authGuard.ensureAuth(action.profile, loginUrl, verifyUrl);
     if (!sessionState) {
-      console.log("❌ 无法获取有效登录会话，取消本次采集\n");
+      logger.warn("❌ 无法获取有效登录会话，取消本次采集");
       return;
     }
   }
@@ -63,7 +63,7 @@ async function handleSingleAction(action: import("./cli/main-menu").MenuAction &
 async function handleBatchAction(action: import("./cli/main-menu").MenuAction & { type: "batch" }, appCfg: Awaited<ReturnType<typeof loadAppConfig>>, logger: ConsoleLogger) {
   const { tasks, concurrency } = await loadBatchTasks();
   if (tasks.length === 0) {
-    console.log("⚠️ tasks.json 中没有任务，请先配置。\n");
+    logger.warn("⚠️ tasks.json 中没有任务，请先配置");
     return;
   }
   const batch = new BatchHarvestService(logger, appCfg.outputDir, concurrency);
@@ -91,8 +91,8 @@ async function handleLoginAction(action: import("./cli/main-menu").MenuAction & 
   ]);
 
   const session = await oracle.executeLogin(action.loginUrl, action.verifyUrl, intel, username, password, action.profile);
-  if (session) console.log(`✅ 登录成功！会话已保存为 [${action.profile}]`);
-  else console.log("❌ 自动登录失败，请检查账号密码或手动操作");
+  if (session) logger.info(`✅ 登录成功！会话已保存为 [${action.profile}]`);
+  else logger.error("❌ 自动登录失败，请检查账号密码或手动操作");
 }
 
 async function handleQrcodeAction(action: import("./cli/main-menu").MenuAction & { type: "qrcode" }, logger: ConsoleLogger) {
@@ -153,7 +153,6 @@ async function handleQrcodeAction(action: import("./cli/main-menu").MenuAction &
     console.log(`✅ 扫码登录成功！会话已保存为 [${action.profile}]`);
   } catch (e) {
     logger.error("扫码登录失败", { err: (e as Error).message });
-    console.log("❌ 扫码登录失败或超时");
   } finally {
     await lcm.close();
   }
@@ -172,7 +171,7 @@ async function handleWebAction(logger: ConsoleLogger) {
 
   web.stop();
   activeWebServer = null;
-  console.log("Web 面板已停止。\n");
+  logger.info("Web 面板已停止");
 }
 
 async function bootstrap() {
@@ -221,6 +220,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  console.error("程序异常：", (err as Error).message);
+  console.error("程序异常退出：", (err as Error).message);
   process.exit(1);
 });
