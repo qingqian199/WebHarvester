@@ -66,8 +66,7 @@ async function bootstrap() {
       console.log(`   验证码：${intel.captchaRequired ? "需要" : "无需"}`);
 
       if (intel.captchaRequired) {
-        console.log("\n⚠️ 检测到验证码，暂不支持自动登录。建议使用 web 面板手动登录。\n");
-        continue;
+        console.log("\n⚠️ 检测到验证码相关字段（可能为误报），自动登录可能存在困难，将尝试继续...\n");
       }
 
       const { username, password } = await inquirer.prompt([

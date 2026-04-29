@@ -9,10 +9,12 @@ import { filterApiRequests } from "../core/rules";
 import { captureSessionFromPage } from "./session-helper";
 
 const LOGIN_TRIGGER_SELECTORS = [
-  'a:has-text("登录"), a:has-text("登入"), a:has-text("Sign in")',
-  'button:has-text("登录"), button:has-text("登入"), button:has-text("Sign in")',
+  'a:has-text("登录"), a:has-text("登入")',
+  'button:has-text("登录"), button:has-text("登入")',
+  'div:has-text("登录"), span:has-text("登录")',
   '.login-btn, .header-login, [class*="login"], [class*="signin"]',
   '.bili-header__bar-login-btn, .header-login-btn',
+  '[class*="header"] [class*="login"], [class*="header"] [class*="user"]',
 ];
 
 const PASSWORD_TAB_SELECTORS = [
@@ -156,12 +158,38 @@ export class LoginOracle {
   private async triggerLoginModal(page: Page): Promise<void> {
     for (const sel of LOGIN_TRIGGER_SELECTORS) {
       const btn = page.locator(sel).first();
-      if ((await btn.count()) > 0) {
+      if ((await btn.count()) > 0 && (await btn.isVisible().catch(() => false))) {
         await btn.click().catch(() => {});
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
         return;
       }
     }
+
+    const clicked = await page.evaluate(() => {
+      const keywords = ["登录", "登入", "sign in"];
+      const allElements = document.querySelectorAll<HTMLElement>(
+        'a, button, div, span, li',
+      );
+      for (const el of allElements) {
+        if (el.offsetWidth === 0 || el.offsetHeight === 0) continue;
+        const text = el.textContent?.trim().toLowerCase() || "";
+        if (keywords.some((k) => text === k) && el.tagName !== "DIV") {
+          el.click();
+          return true;
+        }
+      }
+      for (const el of allElements) {
+        if (el.offsetWidth === 0 || el.offsetHeight === 0) continue;
+        const text = el.textContent?.trim().toLowerCase() || "";
+        if (keywords.some((k) => text === k)) {
+          el.click();
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (clicked) await page.waitForTimeout(1500);
   }
 
   private async waitForLoginForm(page: Page, timeout: number): Promise<boolean> {
@@ -305,11 +333,8 @@ export class LoginOracle {
       }
 
       if (
-        name.includes("captcha") ||
-        name.includes("vercode") ||
-        name.includes("verify") ||
-        placeholder.includes("captcha") ||
-        placeholder.includes("验证码")
+        (type === "text" || type === "number") &&
+        (name.includes("captcha") || name.includes("vercode") || placeholder.includes("captcha") || placeholder.includes("验证码"))
       ) {
         intel.captchaRequired = true;
       }
