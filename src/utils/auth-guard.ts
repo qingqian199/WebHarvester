@@ -9,6 +9,7 @@ import {
   SESSION_VALIDATE_TIMEOUT_MS,
   MANUAL_LOGIN_TIMEOUT_MS,
   LOGIN_SUCCESS_POLL_MS,
+  PAGE_LOAD_FALLBACK_TIMEOUT_MS,
 } from "../core/constants/GlobalConstant";
 
 interface AuthConfig {
@@ -63,8 +64,8 @@ export class AuthGuard {
   private async verifySession(session: SessionState, verifyUrl: string): Promise<boolean> {
     const browser = new BrowserLifecycleManager(this.logger);
     try {
-      const page = await browser.launch(verifyUrl, true, session);
-      await page.waitForLoadState("networkidle", { timeout: SESSION_VALIDATE_TIMEOUT_MS }).catch(() => { });
+      const page = await browser.launch(verifyUrl, true, session, "domcontentloaded", SESSION_VALIDATE_TIMEOUT_MS);
+      await page.waitForLoadState("load", { timeout: PAGE_LOAD_FALLBACK_TIMEOUT_MS }).catch(() => { });
       await page.waitForTimeout(LOGIN_SUCCESS_POLL_MS);
 
       let loggedIn = false;
@@ -127,6 +128,12 @@ export class AuthGuard {
       "[class*='user-center']", ".user-info", ".bili-avatar",
       "[class*='logged-in']", "[class*='login-success']",
     ];
+
+    // 立即检查当前页面是否已处于登录状态
+    const alreadyLoggedIn = await page.evaluate((selectors) => {
+      return selectors.some((s) => document.querySelector(s));
+    }, LOGIN_SUCCESS_SELECTORS);
+    if (alreadyLoggedIn) return;
 
     while (Date.now() - startTime < MANUAL_LOGIN_TIMEOUT_MS) {
       await new Promise((r) => setTimeout(r, LOGIN_SUCCESS_POLL_MS));
