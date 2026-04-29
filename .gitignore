@@ -2,6 +2,7 @@ node_modules/
 dist/
 output/
 sessions/
+coverage/
 *.log
 .env
 .DS_Store

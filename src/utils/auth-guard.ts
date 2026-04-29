@@ -98,8 +98,8 @@ export class AuthGuard {
       this.logger.info("✅ 检测到登录成功，正在提取会话数据...");
       const session = await captureSessionFromPage(page, page.context());
 
-      await this.sessionManager.save(profile, session);
-      this.logger.info(`💾 会话已保存至 profiles/${profile}`);
+      await       this.sessionManager.save(profile, session);
+      this.logger.info(`💾 会话已保存至 sessions/${profile}`);
 
       return session;
     } catch (err) {
@@ -112,38 +112,33 @@ export class AuthGuard {
 
   private async waitForLoginSuccess(page: Page): Promise<void> {
     const startTime = Date.now();
+    const initialUrl = page.url();
 
-    return new Promise((resolve, reject) => {
-      const check = async () => {
-        if (Date.now() - startTime > MANUAL_LOGIN_TIMEOUT_MS) {
-          reject(new Error("登录超时，用户未在 5 分钟内完成登录"));
-          return;
-        }
+    const LOGIN_SUCCESS_SELECTORS = [
+      ".user-avatar", ".header-user-avatar", ".user-name",
+      "[class*='user-center']", ".user-info", ".bili-avatar",
+      "[class*='logged-in']", "[class*='login-success']",
+    ];
 
-        try {
-          const hasContent = await page.evaluate(() => document.body.innerText.length > 50);
-          if (!hasContent) {
-            setTimeout(check, 2000);
-            return;
-          }
+    while (Date.now() - startTime < MANUAL_LOGIN_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const hasContent = await page.evaluate(() => document.body.innerText.length > 50);
+        if (!hasContent) continue;
 
-          const userInfo = await page.evaluate(() => {
-            const el = document.querySelector(
-              ".user-avatar, .header-user-avatar, .user-name, [class*='user-center'], .user-info, .bili-avatar"
-            );
-            return el !== null;
-          });
+        const currentUrl = page.url();
+        const urlChanged = currentUrl.split("?")[0] !== initialUrl.split("?")[0];
 
-          if (userInfo) {
-            resolve();
-          } else {
-            setTimeout(check, 2000);
-          }
-        } catch {
-          setTimeout(check, 2000);
-        }
-      };
-      check();
-    });
+        const foundUserElement = await page.evaluate((selectors) => {
+          return selectors.some((s) => document.querySelector(s));
+        }, LOGIN_SUCCESS_SELECTORS);
+
+        if (urlChanged || foundUserElement) return;
+      } catch {
+        continue;
+      }
+    }
+
+    throw new Error("登录超时，用户未在 5 分钟内完成登录");
   }
 }
