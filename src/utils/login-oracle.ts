@@ -12,15 +12,18 @@ const LOGIN_TRIGGER_SELECTORS = [
   'a:has-text("登录"), a:has-text("登入"), a:has-text("Sign in")',
   'button:has-text("登录"), button:has-text("登入"), button:has-text("Sign in")',
   '.login-btn, .header-login, [class*="login"], [class*="signin"]',
+  '.bili-header__bar-login-btn, .header-login-btn',
 ];
 
 const PASSWORD_TAB_SELECTORS = [
   'span:has-text("密码登录"), div:has-text("密码登录")',
   'span:has-text("账号登录"), div:has-text("账号登录")',
   'li:has-text("密码登录"), li:has-text("账号登录")',
+  '.bili-mini-tab[data-type="password"], [class*="tab"]:has-text("密码")',
 ];
 
-const FIELD_DETECT_TIMEOUT = 8000;
+const PAGE_LOAD_TIMEOUT = 60000;
+const FIELD_DETECT_TIMEOUT = 15000;
 
 interface LoginIntel {
   formAction: string;
@@ -45,7 +48,8 @@ export class LoginOracle {
     this.logger.info("🔍 正在采集登录页面情报...");
     const lcm = new BrowserLifecycleManager(this.logger);
     try {
-      const page = await lcm.launch(loginUrl, false, undefined, "networkidle", 30000);
+      const page = await lcm.launch(loginUrl, false, undefined, "domcontentloaded", PAGE_LOAD_TIMEOUT);
+      await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(2000);
 
       await this.triggerLoginModal(page);
@@ -88,7 +92,8 @@ export class LoginOracle {
     this.logger.info("🔑 正在执行自动登录...");
     const lcm = new BrowserLifecycleManager(this.logger);
     try {
-      const page = await lcm.launch(loginUrl, false, undefined, "networkidle", 30000);
+      const page = await lcm.launch(loginUrl, false, undefined, "domcontentloaded", PAGE_LOAD_TIMEOUT);
+      await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(2000);
 
       await this.triggerLoginModal(page);
@@ -245,7 +250,7 @@ export class LoginOracle {
       return captureSessionFromPage(page, page.context());
     }
 
-    await page.goto(verifyUrl, { waitUntil: "networkidle" });
+    await page.goto(verifyUrl, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(2000);
     return captureSessionFromPage(page, page.context());
   }
