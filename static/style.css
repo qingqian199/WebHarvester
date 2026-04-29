@@ -1,0 +1,26 @@
+body {
+  font-family: -apple-system, sans-serif;
+  margin: 20px;
+  background: #f5f7fa;
+}
+.tabs { margin-bottom: 20px; }
+.tab {
+  padding: 8px 16px;
+  margin-right: 4px;
+  border: none;
+  background: #e2e8f0;
+  cursor: pointer;
+}
+.tab.active { background: #2563eb; color: white; }
+.tab-content { display: none; }
+.tab-content.active { display: block; background: white; padding: 16px; border-radius: 8px; }
+input, select, button { margin: 6px 0; padding: 6px; }
+.log-box {
+  margin-top: 20px;
+  background: #1e293b;
+  color: #f1f5f9;
+  padding: 10px;
+  height: 150px;
+  overflow-y: auto;
+  font-family: monospace;
+}
