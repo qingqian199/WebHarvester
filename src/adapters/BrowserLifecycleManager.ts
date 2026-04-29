@@ -27,22 +27,26 @@ export class BrowserLifecycleManager {
     this.isNetworkCaptureEnabled = true;
 
     this.page.route("**/*", async (route) => {
-      const req = route.request();
-      const url = req.url();
-      const method = req.method();
-      const key = url + method;
-      const isApi = NETWORK_CAPTURE_TYPES.includes(req.resourceType());
+      try {
+        const req = route.request();
+        const url = req.url();
+        const method = req.method();
+        const key = url + method;
+        const isApi = NETWORK_CAPTURE_TYPES.includes(req.resourceType());
 
-      if (isApi) {
-        const response = await route.fetch();
-        const entry = this.ensureEntry(key, url, method, req);
-        entry.statusCode = response.status();
-        entry.completedAt = Date.now();
-        entry.responseBody = await response.text().catch(() => null);
-        await route.fulfill({ response });
-      } else {
-        this.ensureEntry(key, url, method, req);
-        await route.continue();
+        if (isApi) {
+          const response = await route.fetch();
+          const entry = this.ensureEntry(key, url, method, req);
+          entry.statusCode = response.status();
+          entry.completedAt = Date.now();
+          entry.responseBody = await response.text().catch(() => null);
+          await route.fulfill({ response });
+        } else {
+          this.ensureEntry(key, url, method, req);
+          await route.continue();
+        }
+      } catch {
+        await route.continue().catch(() => {});
       }
     });
 
@@ -190,6 +194,7 @@ export class BrowserLifecycleManager {
   }
 
   async close(): Promise<void> {
+    await this.page?.unrouteAll({ behavior: "ignoreErrors" }).catch(() => { });
     await this.page?.close().catch(() => { });
     await this.context?.close().catch(() => { });
     await this.browser?.close().catch(() => { });
