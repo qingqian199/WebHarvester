@@ -162,6 +162,16 @@ async function handleQrcodeAction(action: import("./cli/main-menu").MenuAction &
 
     if (!loggedIn) throw new Error("扫码登录超时");
 
+    // 等待关键鉴权 Cookie 写入（如 B站 的 SESSDATA 在登录成功后可能会有延迟）
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const cookies = await page.context().cookies();
+      const hasSessionCookie = cookies.some((c) =>
+        ["sessdata", "sessionid", "token"].some((k) => c.name.toLowerCase().includes(k)),
+      );
+      if (hasSessionCookie) break;
+    }
+
     const session = await captureSessionFromPage(page, page.context());
     await sessionManager.save(action.profile, session);
     console.log(`✅ 扫码登录成功！会话已保存为 [${action.profile}]`);
