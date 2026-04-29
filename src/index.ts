@@ -124,25 +124,39 @@ async function handleQrcodeAction(action: import("./cli/main-menu").MenuAction &
     console.log("⏳ 等待扫码登录（最长 5 分钟）...");
     console.log("========================================\n");
 
+    const LOGIN_BTN_SELECTORS = [
+      "a[href*=\"login\"], .login-btn, .header-login-btn",
+      "[class*=\"header\"] [class*=\"login\"]",
+      ".bili-header__bar-login-btn",
+    ];
+
+    const h = async () => { await new Promise((r) => setTimeout(r, LOGIN_SUCCESS_POLL_MS)); };
+    const hasLoginBtn = async () => {
+      for (const sel of LOGIN_BTN_SELECTORS) {
+        const el = await page.$(sel);
+        if (el && (await el.isVisible().catch(() => false))) return true;
+      }
+      return false;
+    };
+    const hasAuthCookie = async () => {
+      const cookies = await page.context().cookies();
+      return cookies.some((c) => ["session", "token", "sid", "sess"].some((w) => c.name.toLowerCase().includes(w)));
+    };
+
     const start = Date.now();
     let loggedIn = false;
 
     while (Date.now() - start < MANUAL_LOGIN_TIMEOUT_MS) {
-      await new Promise((r) => setTimeout(r, LOGIN_SUCCESS_POLL_MS));
+      await h();
       try {
         const currentUrl = page.url().split("?")[0];
-        const initialUrl = action.loginUrl.split("?")[0];
-        const urlChanged = currentUrl !== initialUrl;
+        const urlChanged = currentUrl !== action.loginUrl.split("?")[0];
+        if (urlChanged) { loggedIn = true; break; }
 
-        const hasAvatar = await page.evaluate(() =>
-          document.querySelector(".bili-avatar, .user-avatar, .header-user-avatar, [class*='user-center']"),
-        );
-        const modalClosed = await page.evaluate(() => {
-          const modal = document.querySelector(".bili-mini-mask, .modal, [class*='overlay']");
-          return !modal;
-        });
+        if (await hasAuthCookie()) { loggedIn = true; break; }
 
-        if (urlChanged || hasAvatar || modalClosed) { loggedIn = true; break; }
+        const noLoginBtn = !(await hasLoginBtn());
+        if (noLoginBtn) { loggedIn = true; break; }
       } catch {}
     }
 
