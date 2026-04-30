@@ -1,4 +1,4 @@
-import { ISiteCrawler, CrawlerSession, PageData } from "../ports/ISiteCrawler";
+import { ISiteCrawler, CrawlerSession, PageData, FetchOptions } from "../ports/ISiteCrawler";
 
 /**
  * 爬虫调度器。
@@ -38,9 +38,9 @@ export class CrawlerDispatcher {
    * 执行采集。优先走特化爬虫，无匹配返回 null。
    * @returns PageData 如果命中爬虫，否则 null。
    */
-  async fetch(url: string, session?: CrawlerSession): Promise<PageData | null> {
+  async fetch(url: string, session?: CrawlerSession, options?: FetchOptions): Promise<PageData | null> {
     const crawler = this.dispatch(url);
     if (!crawler) return null;
-    return crawler.fetch(url, session);
+    return crawler.fetch(url, session, options);
   }
 }

@@ -1,5 +1,5 @@
 import fetch from "node-fetch";
-import { ISiteCrawler, CrawlerSession, PageData } from "../../core/ports/ISiteCrawler";
+import { ISiteCrawler, CrawlerSession, PageData, FetchOptions } from "../../core/ports/ISiteCrawler";
 import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { generateXsHeader } from "../../utils/crypto/xhs-signer";
 
@@ -25,12 +25,15 @@ export class XhsCrawler implements ISiteCrawler {
     }
   }
 
-  async fetch(url: string, session?: CrawlerSession): Promise<PageData> {
+  async fetch(url: string, session?: CrawlerSession, options?: FetchOptions): Promise<PageData> {
     const cookies = session?.cookies ?? [];
     const cookieMap: Record<string, string> = {};
     for (const c of cookies) cookieMap[c.name] = c.value;
     const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
     const fp = this.fp.getFingerprint();
+
+    const method = options?.method ?? "GET";
+    const body = options?.body ?? "";
 
     const headers: Record<string, string> = {
       "User-Agent": fp.userAgent,
@@ -44,12 +47,14 @@ export class XhsCrawler implements ISiteCrawler {
     const isApi = parsed.hostname === XHS_API_HOST;
 
     if (isApi) {
-      // Phase 2: 完整签名
-      const apiPath = parsed.pathname + parsed.search;
-      const xsHeaders = generateXsHeader(apiPath, "", cookieMap);
+      // Phase 2: 完整签名（签名数据包含 body）
+      const apiPath = parsed.pathname + (method === "GET" ? parsed.search : "");
+      const signData = method === "POST" ? body : parsed.search.replace("?", "");
+      const xsHeaders = generateXsHeader(apiPath, signData, cookieMap);
       Object.assign(headers, xsHeaders, {
         "Accept": "application/json, text/plain, */*",
         "X-s-common": buildXsCommon(fp.userAgent, fp.platform),
+        ...(method === "POST" ? { "Content-Type": options?.contentType ?? "application/json;charset=UTF-8" } : {}),
       });
     } else {
       // Phase 1: 简化签名（HTML 页面）
@@ -63,7 +68,11 @@ export class XhsCrawler implements ISiteCrawler {
     }
 
     const start = Date.now();
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, {
+      method,
+      headers,
+      ...(method === "POST" && body ? { body } : {}),
+    });
     const responseTime = Date.now() - start;
 
     return {
