@@ -28,9 +28,12 @@ describe("XhsCrawler", () => {
       expect(result.length).toBeGreaterThan(10);
     });
 
-    it("includes platform in output", () => {
+    it("returns base64-encoded JSON with platform info", () => {
       const result = buildXsCommon("Mozilla/5.0 Chrome/124", "Win32");
-      expect(result).toContain("Win32");
+      const decoded = Buffer.from(result, "base64").toString("utf-8");
+      const parsed = JSON.parse(decoded);
+      expect(parsed.x2).toBe("Windows");
+      expect(parsed.x3).toBe("xhs-pc-web");
     });
   });
 

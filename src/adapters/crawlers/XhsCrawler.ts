@@ -38,6 +38,7 @@ export class XhsCrawler implements ISiteCrawler {
     const headers: Record<string, string> = {
       "User-Agent": fp.userAgent,
       "Accept-Language": fp.acceptLanguage,
+      "Accept": "application/json, text/plain, */*",
       "Referer": "https://www.xiaohongshu.com/",
       "Origin": "https://www.xiaohongshu.com",
       ...(cookieStr ? { Cookie: cookieStr } : {}),
@@ -52,8 +53,9 @@ export class XhsCrawler implements ISiteCrawler {
       const signData = method === "POST" ? body : parsed.search.replace("?", "");
       const xsHeaders = generateXsHeader(apiPath, signData, cookieMap);
       Object.assign(headers, xsHeaders, {
-        "Accept": "application/json, text/plain, */*",
         "X-s-common": buildXsCommon(fp.userAgent, fp.platform),
+        "x-api-version": "1.0",
+        "x-request-id": `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         ...(method === "POST" ? { "Content-Type": options?.contentType ?? "application/json;charset=UTF-8" } : {}),
       });
     } else {
@@ -89,8 +91,19 @@ export class XhsCrawler implements ISiteCrawler {
 // ── 辅助函数 ───────────────────────────────────────────
 
 export function buildXsCommon(userAgent: string, platform: string): string {
-  const uaBrief = userAgent.slice(0, 50).replace(/[^a-zA-Z0-9]/g, "_");
-  return `${uaBrief}__${platform}__zh-CN__${Date.now().toString(36)}`;
+  const info = {
+    s0: Date.now().toString(36),
+    s1: "",
+    x0: "1",
+    x1: "3.6.8",
+    x2: platform === "Win32" ? "Windows" : platform === "MacIntel" ? "macOS" : "Linux",
+    x3: "xhs-pc-web",
+    x4: "4.0.16",
+    x5: userAgent.slice(0, 80),
+    x6: "zh-CN",
+    x7: "",
+  };
+  return Buffer.from(JSON.stringify(info)).toString("base64");
 }
 
 function buildXsLegacy(xt: string): string {
