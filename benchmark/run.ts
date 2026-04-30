@@ -40,7 +40,7 @@ const SAMPLE_REQUESTS = Array.from({ length: 200 }, (_, i) =>
 const SAMPLE_ELEMENTS = Array.from({ length: 30 }, (_, i) => mockElement(`.el-${i}`));
 
 const SAMPLE_STORAGE: StorageSnapshot = {
-  localStorage: { token: "mock-token", "user.preferences": '{"theme":"dark"}' },
+  localStorage: { token: "mock-token", "user.preferences": "{\"theme\":\"dark\"}" },
   sessionStorage: {},
   cookies: [{ name: "sid", value: "abc", domain: ".example.com" }],
 };

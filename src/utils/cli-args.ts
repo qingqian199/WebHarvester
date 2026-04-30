@@ -8,6 +8,7 @@ export interface CliRuntimeArgs {
   analyzeFile?: string;
   verifyUrl?: string;
   loginUrl?: string;
+  quickArticleUrl?: string;
 }
 
 export function parseCliArgs(): CliRuntimeArgs {
@@ -52,6 +53,9 @@ export function parseCliArgs(): CliRuntimeArgs {
         break;
       case "--login-url":
         opts.loginUrl = args[++i];
+        break;
+      case "--quick-article":
+        opts.quickArticleUrl = args[++i];
         break;
     }
   }

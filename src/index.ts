@@ -13,6 +13,7 @@ import { FeatureFlags } from "./core/features";
 import { startMainMenu, runAnalyzeFromMenu } from "./cli/main-menu";
 import { AuthGuard } from "./utils/auth-guard";
 import { LoginOracle } from "./utils/login-oracle";
+import { ArticleCaptureService } from "./services/ArticleCaptureService";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
 import { captureSessionFromPage } from "./utils/session-helper";
 import { SessionState } from "./core/ports/ISessionManager";
@@ -182,6 +183,24 @@ async function handleQrcodeAction(action: import("./cli/main-menu").MenuAction &
   }
 }
 
+async function handleQuickArticleAction(action: import("./cli/main-menu").MenuAction & { type: "quick-article" }, logger: ConsoleLogger) {
+  const service = new ArticleCaptureService(logger, new FileSessionManager(), action.profile);
+  try {
+    const result = await service.capture(action.url);
+    console.log("\n═══════════════════════════════════");
+    console.log(`  标题: ${result.title}`);
+    console.log(`  作者: ${result.author.name}`);
+    console.log(`  正文长度: ${result.content.length} 字符`);
+    console.log(`  采集时间: ${result.capturedAt}`);
+    console.log("═══════════════════════════════════\n");
+    console.log("正文预览:\n");
+    console.log(result.content.slice(0, 500) + (result.content.length > 500 ? "\n..." : ""));
+  } catch (e) {
+    logger.error("文章采集失败", { err: (e as Error).message });
+    console.log("❌ 文章采集失败:", (e as Error).message);
+  }
+}
+
 async function handleWebAction(logger: ConsoleLogger) {
   const web = new WebServer(logger);
   activeWebServer = web;
@@ -237,6 +256,9 @@ async function bootstrap() {
         break;
       case "web":
         await handleWebAction(logger);
+        break;
+      case "quick-article":
+        await handleQuickArticleAction(action, logger);
         break;
     }
     console.log("");

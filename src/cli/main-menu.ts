@@ -7,6 +7,7 @@ export type MenuAction =
     | { type: "batch" }
     | { type: "login"; profile: string; loginUrl: string; verifyUrl: string }
     | { type: "qrcode"; profile: string; loginUrl: string; verifyUrl: string }
+    | { type: "quick-article"; url: string; profile?: string }
     | { type: "analyze" }
     | { type: "web" }
     | { type: "exit" };
@@ -22,6 +23,7 @@ export async function startMainMenu(): Promise<MenuAction> {
                 { name: "4. 📱 扫码登录（推荐 B站等 SPA）", value: "qrcode" },
                 { name: "5. 📊 分析已有采集结果", value: "analyze" },
                 { name: "6. 🌍 启动 Web 可视化面板", value: "web" },
+                { name: "7. 📄 快速采集单篇文章", value: "quick-article" },
                 { name: "0. 退出", value: "exit" }
             ]
         }
@@ -88,6 +90,22 @@ export async function startMainMenu(): Promise<MenuAction> {
             { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" }
         ]);
         return { type: "qrcode", ...ans };
+    }
+
+    if (action === "quick-article") {
+        const { url, useProfile } = await inquirer.prompt([
+            { type: "input", name: "url", message: "文章 URL：" },
+            { type: "confirm", name: "useProfile", message: "使用已存登录会话？", default: false }
+        ]);
+        let profile: string | undefined;
+        if (useProfile) {
+            const list = await new FileSessionManager().listProfiles();
+            if (list.length > 0) {
+                const { prof } = await inquirer.prompt([{ type: "list", name: "prof", message: "选择会话", choices: list }]);
+                profile = prof;
+            }
+        }
+        return { type: "quick-article", url, profile };
     }
 
     if (action === "analyze") return { type: "analyze" };

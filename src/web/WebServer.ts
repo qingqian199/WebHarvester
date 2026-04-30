@@ -13,6 +13,7 @@ import { ResultAnalyzer } from "../utils/analyzer";
 import { loadAppConfig } from "../utils/config-loader";
 import { loadBatchTasks } from "../utils/batch-loader";
 import { HarvestResult } from "../core/models";
+import { ArticleCaptureService } from "../services/ArticleCaptureService";
 
 export class WebServer {
   private server: http.Server | null = null;
@@ -54,6 +55,8 @@ export class WebServer {
           await this.handleApiProfiles(req, res);
         } else if (req.url === "/api/analyze" && req.method === "POST") {
           await this.handleApiAnalyze(req, res);
+        } else if (req.url === "/api/quick-article" && req.method === "POST") {
+          await this.handleApiQuickArticle(req, res);
         } else {
           res.writeHead(404);
           res.end("Not Found");
@@ -158,6 +161,20 @@ export class WebServer {
 
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(html);
+  }
+
+  private async handleApiQuickArticle(req: http.IncomingMessage, res: http.ServerResponse) {
+    const body = await this.getBody(req);
+    const { url } = JSON.parse(body);
+    if (!url) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ code: -1, msg: "缺少 url 参数" }));
+      return;
+    }
+    const service = new ArticleCaptureService(this.logger);
+    const result = await service.capture(url);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data: result }));
   }
 
   private async handleHealth(res: http.ServerResponse) {
