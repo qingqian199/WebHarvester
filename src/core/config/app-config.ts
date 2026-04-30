@@ -21,6 +21,7 @@ export interface AppConfig {
     generateStubs: boolean;
     stubLanguage: "python" | "javascript";
   };
+  crawlers?: Record<string, "enabled" | "disabled">;
 }
 
 export interface BatchTaskItem {
@@ -55,5 +56,9 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
   crawlOps: {
     generateStubs: true,
     stubLanguage: "python",
+  },
+  crawlers: {
+    xiaohongshu: "enabled",
+    zhihu: "disabled",
   },
 };

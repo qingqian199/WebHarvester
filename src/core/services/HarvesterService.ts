@@ -12,6 +12,8 @@ import { ErrorCode } from "../error/ErrorCode";
 import { filterApiRequests, filterHiddenFields, extractAuthStorage } from "../rules";
 import { StrategyOrchestrator } from "./StrategyOrchestrator";
 import { ILightHttpEngine } from "../ports/ILightHttpEngine";
+import { CrawlerDispatcher } from "./CrawlerDispatcher";
+import { CrawlerSession } from "../ports/ISiteCrawler";
 
 /** 采集服务——核心编排器。协调浏览器自动化、数据提取、规则分析和结果存储。 */
 export class HarvesterService {
@@ -20,6 +22,7 @@ export class HarvesterService {
     private readonly browser: IBrowserAdapter,
     private readonly storage: IStorageAdapter,
     private readonly httpEngine?: ILightHttpEngine,
+    private readonly crawlerDispatcher?: CrawlerDispatcher,
   ) { }
 
   /**
@@ -44,7 +47,19 @@ export class HarvesterService {
       this.logger.setTraceId?.(traceId);
       this.logger.info("开始采集任务", { url: config.targetUrl });
 
-      // 策略决策：优先使用轻量 HTTP 引擎
+      // 策略决策 0：优先使用特化爬虫
+      if (this.crawlerDispatcher) {
+        const session: CrawlerSession | undefined = sessionState
+          ? { cookies: sessionState.cookies, localStorage: sessionState.localStorage }
+          : undefined;
+        const pageData = await this.crawlerDispatcher.fetch(config.targetUrl, session);
+        if (pageData) {
+          return this.handleCrawlerResult(config, pageData, traceId, outputFormat);
+        }
+        this.logger.info("无特化爬虫匹配，切换为通用引擎", { url: config.targetUrl });
+      }
+
+      // 策略决策 1：轻量 HTTP 引擎
       if (this.httpEngine) {
         const lightResult = await this.httpEngine.fetch(config.targetUrl).catch(() => null);
         if (lightResult) {
@@ -62,6 +77,34 @@ export class HarvesterService {
     }, TASK_GLOBAL_TIMEOUT_MS).finally(async () => {
       await this.browser.close();
     });
+  }
+
+  private async handleCrawlerResult(
+    config: HarvestConfig,
+    pageData: import("../ports/ISiteCrawler").PageData,
+    traceId: string,
+    outputFormat: string,
+  ): Promise<HarvestResult> {
+    const { statusCode, body, headers, responseTime } = pageData;
+    const result: HarvestResult = {
+      traceId,
+      targetUrl: config.targetUrl,
+      networkRequests: [{
+        url: config.targetUrl, method: "GET", statusCode,
+        requestHeaders: headers,
+        responseBody: body.slice(0, 10000),
+        timestamp: Date.now() - responseTime, completedAt: Date.now(),
+      }],
+      elements: [],
+      storage: { localStorage: {}, sessionStorage: {}, cookies: [] },
+      jsVariables: {},
+      startedAt: Date.now() - responseTime,
+      finishedAt: Date.now(),
+      analysis: { apiRequests: [], hiddenFields: [], authInfo: { localStorage: {}, sessionStorage: {} } },
+    };
+    await this.storage.save(result, outputFormat);
+    this.logger.info("特化爬虫采集完成", { cost: responseTime, status: statusCode });
+    return result;
   }
 
   private async harvestWithHttp(

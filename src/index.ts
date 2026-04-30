@@ -16,6 +16,8 @@ import { startMainMenu, runAnalyzeFromMenu } from "./cli/main-menu";
 import { AuthGuard } from "./utils/auth-guard";
 import { LoginOracle } from "./utils/login-oracle";
 import { ArticleCaptureService } from "./services/ArticleCaptureService";
+import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
+import { XhsCrawler } from "./adapters/crawlers/XhsCrawler";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
 import { captureSessionFromPage } from "./utils/session-helper";
 import { SessionState } from "./core/ports/ISessionManager";
@@ -57,9 +59,10 @@ async function handleSingleAction(action: import("./cli/main-menu").MenuAction &
     }
   }
 
+  const dispatcher = createCrawlerDispatcher(appCfg);
   const browser = new PlaywrightAdapter(logger);
   const storage = new FileStorageAdapter(appCfg.outputDir);
-  const svc = new HarvesterService(logger, browser, storage);
+  const svc = new HarvesterService(logger, browser, storage, undefined, dispatcher);
   await svc.harvest(action.config, "all", action.saveSession, sessionManager, action.profile, sessionState ?? undefined);
 }
 
@@ -224,6 +227,12 @@ async function handleWebAction(logger: ConsoleLogger) {
   web.stop();
   activeWebServer = null;
   logger.info("Web 面板已停止");
+}
+
+function createCrawlerDispatcher(appCfg: Awaited<ReturnType<typeof loadAppConfig>>): CrawlerDispatcher {
+  const d = new CrawlerDispatcher();
+  if (appCfg.crawlers?.xiaohongshu === "enabled") d.register(new XhsCrawler());
+  return d;
 }
 
 async function bootstrap() {
