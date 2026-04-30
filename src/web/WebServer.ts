@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import pkg from "../../package.json";
+import { loadAppConfig } from "../utils/config-loader";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { PlaywrightAdapter } from "../adapters/PlaywrightAdapter";
 import { FileStorageAdapter } from "../adapters/FileStorageAdapter";
@@ -11,7 +12,6 @@ import { BatchHarvestService } from "../services/BatchHarvestService";
 import { FileSessionManager } from "../adapters/FileSessionManager";
 import { AuthGuard } from "../utils/auth-guard";
 import { ResultAnalyzer } from "../utils/analyzer";
-import { loadAppConfig } from "../utils/config-loader";
 import { loadBatchTasks } from "../utils/batch-loader";
 import { HarvestResult } from "../core/models";
 import { ArticleCaptureService } from "../services/ArticleCaptureService";
@@ -60,6 +60,12 @@ export class WebServer {
           await this.handleApiAnalyze(req, res);
         } else if (req.url === "/api/quick-article" && req.method === "POST") {
           await this.handleApiQuickArticle(req, res);
+        } else if (req.url === "/api/crawlers" && req.method === "GET") {
+          await this.handleApiCrawlers(res);
+        } else if (req.url === "/api/sessions" && req.method === "GET") {
+          await this.handleApiSessions(req, res);
+        } else if (req.url?.startsWith("/api/sessions/") && req.method === "DELETE") {
+          await this.handleApiDeleteSession(req, res);
         } else {
           res.writeHead(404);
           res.end("Not Found");
@@ -178,6 +184,31 @@ export class WebServer {
     const result = await service.capture(url);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ code: 0, data: result }));
+  }
+
+  private async handleApiCrawlers(res: http.ServerResponse) {
+    const appCfg = await loadAppConfig();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data: appCfg.crawlers ?? {} }));
+  }
+
+  private async handleApiSessions(req: http.IncomingMessage, res: http.ServerResponse) {
+    const profiles = await this.sessionManager.listProfiles();
+    const data = await Promise.all(profiles.map(async (name) => {
+      const state = await this.sessionManager.load(name);
+      if (!state) return { name, status: "error", cookies: 0, createdAt: null };
+      const ageHours = (Date.now() - state.createdAt) / 3600000;
+      return { name, status: ageHours > 336 ? "expired" : "valid", cookies: state.cookies.length, createdAt: state.createdAt };
+    }));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data }));
+  }
+
+  private async handleApiDeleteSession(req: http.IncomingMessage, res: http.ServerResponse) {
+    const name = req.url!.replace("/api/sessions/", "").split("?")[0];
+    await this.sessionManager.deleteProfile(name);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, msg: `已删除会话 ${name}` }));
   }
 
   private async handleHealth(res: http.ServerResponse) {

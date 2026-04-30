@@ -1,44 +1,80 @@
 import inquirer from "inquirer";
 import { HarvestConfig } from "../core/models";
 import { FileSessionManager } from "../adapters/FileSessionManager";
+import { loadAppConfig } from "../utils/config-loader";
 
 export type MenuAction =
     | { type: "single"; config: HarvestConfig; profile?: string; saveSession: boolean }
+    | { type: "crawler-site"; site: string; url: string; profile?: string }
     | { type: "batch" }
     | { type: "login"; profile: string; loginUrl: string; verifyUrl: string }
     | { type: "qrcode"; profile: string; loginUrl: string; verifyUrl: string }
     | { type: "quick-article"; url: string; profile?: string }
     | { type: "analyze" }
+    | { type: "gen-stub" }
+    | { type: "view-sessions" }
     | { type: "web" }
+    | { type: "view-config" }
+    | { type: "toggle-features" }
     | { type: "exit" };
 
 export async function startMainMenu(): Promise<MenuAction> {
+    const appCfg = await loadAppConfig();
+    const enabledCrawlers = Object.entries(appCfg.crawlers ?? {})
+        .filter(([, v]) => v === "enabled")
+        .map(([k]) => k);
+
     const { action } = await inquirer.prompt([
         {
             type: "list", name: "action", message: "🌐 WebHarvester 主菜单",
             choices: [
-                { name: "1. 单站点快速采集", value: "single" },
-                { name: "2. 批量采集", value: "batch" },
-                { name: "3. 🔑 账号密码自动登录", value: "login" },
-                { name: "4. 📱 扫码登录（推荐 B站等 SPA）", value: "qrcode" },
-                { name: "5. 📊 分析已有采集结果", value: "analyze" },
-                { name: "6. 🌍 启动 Web 可视化面板", value: "web" },
-                { name: "7. 📄 快速采集单篇文章", value: "quick-article" },
-                { name: "0. 退出", value: "exit" }
+                new inquirer.Separator(" 📌 采集模式"),
+                { name: "  1. 通用站点探测", value: "single" },
+                ...(enabledCrawlers.length > 0
+                    ? [{ name: `  2. 特化站点采集（${enabledCrawlers.join("/")}）`, value: "crawler" }]
+                    : []),
+                { name: "  3. 批量任务", value: "batch" },
+                new inquirer.Separator(" 🔐 登录与会话"),
+                { name: "  4. 账号密码登录", value: "login" },
+                { name: "  5. 扫码登录", value: "qrcode" },
+                new inquirer.Separator(" 📊 离线分析"),
+                { name: "  6. 分析已有采集结果", value: "analyze" },
+                { name: "  7. 生成签名桩代码", value: "gen-stub" },
+                { name: "  8. 查看已存会话", value: "view-sessions" },
+                new inquirer.Separator(" 🌍 服务"),
+                { name: "  9. 启动 Web 可视化面板", value: "web" },
+                new inquirer.Separator(" ⚙️ 配置"),
+                { name: " 10. 查看当前配置", value: "view-config" },
+                { name: " 11. 切换功能开关", value: "toggle-features" },
+                { name: "  0. 退出", value: "exit" },
             ]
         }
     ]);
 
+    if (action === "crawler") {
+        const sites = enabledCrawlers.length > 0 ? enabledCrawlers : ["xiaohongshu"];
+        const { site, url } = await inquirer.prompt([
+            { type: "list", name: "site", message: "选择特化站点：", choices: sites },
+            { type: "input", name: "url", message: "目标 URL：", validate: (v: string) => !!v.trim() },
+        ]);
+        const list = await new FileSessionManager().listProfiles();
+        const siteSessions = list.filter(s => s.toLowerCase().includes(site) || s === site);
+        let profile: string | undefined;
+        if (siteSessions.length > 0) {
+            const { useIt } = await inquirer.prompt([{ type: "confirm", name: "useIt", message: `检测到会话：${siteSessions[0]}，使用？`, default: true }]);
+            if (useIt) profile = siteSessions[0];
+        }
+        return { type: "crawler-site", site, url, profile };
+    }
+
     if (action === "single") {
         const ans = await inquirer.prompt([
             { type: "input", name: "targetUrl", message: "目标网址：", validate: v => !!v.trim() },
-            {
-                type: "checkbox", name: "captureItems", message: "采集内容", choices: [
-                    { name: "全量网络请求", value: "network", checked: true },
-                    { name: "DOM 元素", value: "element", checked: true },
-                    { name: "Cookie/存储", value: "storage", checked: true }
-                ]
-            }
+            { type: "checkbox", name: "captureItems", message: "采集内容", choices: [
+                { name: "全量网络请求", value: "network", checked: true },
+                { name: "DOM 元素", value: "element", checked: true },
+                { name: "Cookie/存储", value: "storage", checked: true }
+            ]}
         ]);
         const { useProfile } = await inquirer.prompt([{ type: "confirm", name: "useProfile", message: "是否使用/保存登录会话？", default: false }]);
         let profile: string | undefined;
@@ -50,28 +86,9 @@ export async function startMainMenu(): Promise<MenuAction> {
             if (prof === "__new__") {
                 const { newName } = await inquirer.prompt([{ type: "input", name: "newName", message: "新会话名称：" }]);
                 profile = newName; saveSession = true;
-            } else {
-                profile = prof; saveSession = false;
-            }
+            } else { profile = prof; saveSession = false; }
         }
-        return {
-            type: "single",
-            config: {
-                targetUrl: ans.targetUrl.trim(),
-                networkCapture: { captureAll: true },
-                elementSelectors: [
-                    "input",
-                    "input[type=\"hidden\"]",
-                    "form",
-                    "button",
-                    "textarea",
-                    "select"
-                ],
-                storageTypes: ["localStorage", "sessionStorage", "cookies"]
-            },
-            profile,
-            saveSession
-        };
+        return { type: "single", config: { targetUrl: ans.targetUrl.trim(), networkCapture: { captureAll: true }, elementSelectors: ["input", "input[type=\"hidden\"]", "form", "button", "textarea", "select"], storageTypes: ["localStorage", "sessionStorage", "cookies"] }, profile, saveSession };
     }
 
     if (action === "login") {
@@ -108,8 +125,12 @@ export async function startMainMenu(): Promise<MenuAction> {
         return { type: "quick-article", url, profile };
     }
 
+    if (action === "gen-stub") return { type: "gen-stub" };
+    if (action === "view-sessions") return { type: "view-sessions" };
     if (action === "analyze") return { type: "analyze" };
     if (action === "web") return { type: "web" };
+    if (action === "view-config") return { type: "view-config" };
+    if (action === "toggle-features") return { type: "toggle-features" };
     return { type: "exit" };
 }
 
@@ -117,49 +138,27 @@ export async function runAnalyzeFromMenu() {
     const fs = await import("fs/promises");
     const path = await import("path");
     const outputDir = path.resolve("./output");
-
     try {
         const entries = await fs.readdir(outputDir, { withFileTypes: true });
         const jsonFiles: string[] = [];
-
         for (const entry of entries) {
             if (entry.isDirectory()) {
                 const dirPath = path.join(outputDir, entry.name);
                 const files = await fs.readdir(dirPath);
-                for (const f of files) {
-                    if (f.endsWith(".json")) {
-                        jsonFiles.push(path.join(dirPath, f));
-                    }
-                }
+                for (const f of files) { if (f.endsWith(".json")) jsonFiles.push(path.join(dirPath, f)); }
             }
         }
-
-        if (jsonFiles.length === 0) {
-            console.log("⚠️ output 目录中未找到采集结果 JSON 文件。\n");
-            return;
-        }
-
+        if (jsonFiles.length === 0) { console.log("⚠️ output 目录中未找到采集结果 JSON 文件。\n"); return; }
         console.log(`\n📂 找到 ${jsonFiles.length} 个采集结果文件：\n`);
-        for (let i = 0; i < jsonFiles.length; i++) {
-            console.log(`  ${i + 1}. ${jsonFiles[i]}`);
-        }
+        jsonFiles.forEach((f, i) => console.log(`  ${i + 1}. ${f}`));
         console.log("");
-
-        const { idx } = await inquirer.prompt([
-            { type: "input", name: "idx", message: "输入编号查看分析报告（留空取消）：" }
-        ]);
-
-        if (!idx || isNaN(Number(idx)) || Number(idx) < 1 || Number(idx) > jsonFiles.length) {
-            console.log("已取消。\n");
-            return;
-        }
-
+        const { idx } = await inquirer.prompt([{ type: "input", name: "idx", message: "输入编号查看分析报告（留空取消）：" }]);
+        if (!idx || isNaN(Number(idx)) || Number(idx) < 1 || Number(idx) > jsonFiles.length) { console.log("已取消。\n"); return; }
         const { ResultAnalyzer } = await import("../utils/analyzer");
         const raw = await fs.readFile(jsonFiles[Number(idx) - 1], "utf-8");
         const result: import("../core/models").HarvestResult = JSON.parse(raw);
         const summary = ResultAnalyzer.summarize(result);
         const html = ResultAnalyzer.generateHtmlReport(summary, result);
-
         const reportPath = path.resolve(`output/report-${result.traceId}.html`);
         await fs.writeFile(reportPath, html, "utf-8");
         console.log(`✅ 分析报告已生成：${reportPath}\n`);

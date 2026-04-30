@@ -229,6 +229,107 @@ async function handleWebAction(logger: ConsoleLogger) {
   logger.info("Web 面板已停止");
 }
 
+async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAction & { type: "crawler-site" }, appCfg: Awaited<ReturnType<typeof loadAppConfig>>, logger: ConsoleLogger) {
+  const dispatcher = createCrawlerDispatcher(appCfg);
+  const crawler = dispatcher.dispatch(action.url);
+  if (!crawler) { console.log("❌ 无匹配的特化爬虫"); return; }
+
+  let session: import("./core/ports/ISiteCrawler").CrawlerSession | undefined;
+  if (action.profile) {
+    const sm = new FileSessionManager();
+    const s = await sm.load(action.profile);
+    if (s) session = { cookies: s.cookies, localStorage: s.localStorage };
+  }
+
+  try {
+    const result = await crawler.fetch(action.url, session);
+    console.log(`\n✅ ${crawler.name} 采集完成`);
+    console.log(`   状态码: ${result.statusCode}`);
+    console.log(`   耗时: ${result.responseTime}ms`);
+    console.log(`   正文长度: ${result.body.length} 字符`);
+    const outDir = path.resolve("output", crawler.name);
+    await fs.mkdir(outDir, { recursive: true });
+    const outFile = path.join(outDir, `${crawler.name}-${Date.now()}.json`);
+    await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
+    console.log(`   已保存: ${outFile}`);
+  } catch (e) {
+    logger.error(`${crawler.name} 采集失败`, { err: (e as Error).message });
+    console.log("❌ 采集失败:", (e as Error).message);
+  }
+}
+
+async function handleGenStubAction(logger: ConsoleLogger) {
+  const { filePath } = await (await import("inquirer")).default.prompt([
+    { type: "input", name: "filePath", message: "采集结果 JSON 文件路径：" },
+  ]);
+  try {
+    const { StubGenerator } = await import("./utils/crawl-ops/stub-generator");
+    const raw = await fs.readFile(filePath, "utf-8");
+    const result = JSON.parse(raw);
+    const gen = new StubGenerator();
+    const { lang } = await (await import("inquirer")).default.prompt([
+      { type: "list", name: "lang", message: "选择语言：", choices: ["python", "javascript"] }
+    ]);
+    const stub = gen.generateWbiStub(result, lang);
+    if (!stub) { console.log("⚠️ 未能生成桩代码（缺少 WBI 密钥）"); return; }
+    const dir = path.dirname(filePath);
+    const ext = lang === "python" ? "py" : "js";
+    const stubPath = path.join(dir, `wbi-stub.${ext}`);
+    const testPath = path.join(dir, `wbi-test.${ext}`);
+    await fs.writeFile(stubPath, stub.code);
+    await fs.writeFile(testPath, stub.testCode);
+    console.log(`✅ 桩代码: ${stubPath}`);
+    console.log(`✅ 测试文件: ${testPath}`);
+  } catch (e) {
+    logger.error("生成桩代码失败", { err: (e as Error).message });
+    console.log("❌ 生成失败:", (e as Error).message);
+  }
+}
+
+async function handleViewSessionsAction(_logger: ConsoleLogger) {
+  const { FileSessionManager } = await import("./adapters/FileSessionManager");
+  const sm = new FileSessionManager();
+  const list = await sm.listProfiles();
+  if (list.length === 0) { console.log("📂 暂无已存会话\n"); return; }
+  console.log("\n📂 已存会话：\n");
+  for (const name of list) {
+    const state = await sm.load(name);
+    if (!state) { console.log(`  ${name} [无法读取]`); continue; }
+    const created = new Date(state.createdAt).toLocaleString();
+    const age = Math.round((Date.now() - state.createdAt) / 1000 / 60);
+    const expired = age > 60 * 24 * 14; // 14 days
+    const status = expired ? "❌ 已过期" : "✅ 有效";
+    console.log(`  ${name}`);
+    console.log(`    创建: ${created} | Cookie: ${state.cookies.length} | ${status}`);
+  }
+  console.log("");
+}
+
+async function handleViewConfigAction() {
+  const raw = await fs.readFile("config.json", "utf-8");
+  const cfg = JSON.parse(raw);
+  const masked = JSON.stringify(cfg, (key, val) => {
+    if (typeof val === "string" && val.length > 20 && (key.includes("token") || key.includes("key") || key.includes("secret"))) {
+      return val.slice(0, 8) + "****" + val.slice(-4);
+    }
+    return val;
+  }, 2);
+  console.log("\n📋 当前配置：\n");
+  console.log(masked);
+  console.log("");
+}
+
+async function handleToggleFeaturesAction(_logger: ConsoleLogger) {
+  const flags = Object.entries(FeatureFlags);
+  console.log("\n⚙️ 功能开关：\n");
+  flags.forEach(([k, v]) => console.log(`  ${v ? "✅" : "⬜"} ${k.replace("enable", "")}`));
+  const { flagName } = await (await import("inquirer")).default.prompt([
+    { type: "list", name: "flagName", message: "选择要切换的开关：", choices: flags.map(([k]) => ({ name: `${k} (${FeatureFlags[k as keyof typeof FeatureFlags] ? "开" : "关"})`, value: k })) }
+  ]);
+  (FeatureFlags as any)[flagName] = !(FeatureFlags as any)[flagName];
+  console.log(`\n✅ ${flagName} 已切换为 ${(FeatureFlags as any)[flagName] ? "开启" : "关闭"}（重启后恢复默认）\n`);
+}
+
 function createCrawlerDispatcher(appCfg: Awaited<ReturnType<typeof loadAppConfig>>): CrawlerDispatcher {
   const d = new CrawlerDispatcher();
   if (appCfg.crawlers?.xiaohongshu === "enabled") d.register(new XhsCrawler());
@@ -277,6 +378,21 @@ async function bootstrap() {
         break;
       case "quick-article":
         await handleQuickArticleAction(action, logger);
+        break;
+      case "crawler-site":
+        await handleCrawlerSiteAction(action, appCfg, logger);
+        break;
+      case "gen-stub":
+        await handleGenStubAction(logger);
+        break;
+      case "view-sessions":
+        await handleViewSessionsAction(logger);
+        break;
+      case "view-config":
+        await handleViewConfigAction();
+        break;
+      case "toggle-features":
+        await handleToggleFeaturesAction(logger);
         break;
     }
     console.log("");

@@ -2,54 +2,59 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WebHarvester 控制台</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <h1>🌐 WebHarvester 可视化面板</h1>
-  <div class="tabs">
-    <button class="tab active" onclick="switchTab('tab-run')">快速采集</button>
-    <button class="tab" onclick="switchTab('tab-batch')">批量任务</button>
-    <button class="tab" onclick="switchTab('tab-login')">登录管理</button>
-    <button class="tab" onclick="switchTab('tab-analyze')">分析报告</button>
+  <div class="tabs" id="tabNav">
+    <button class="tab active" onclick="switchTab('tab-collect')">采集任务</button>
+    <button class="tab" onclick="switchTab('tab-sessions')">会话管理</button>
+    <button class="tab" onclick="switchTab('tab-analyze')">结果分析</button>
     <button class="tab" onclick="switchTab('tab-health')">服务状态</button>
   </div>
 
-  <div id="tab-run" class="tab-content active">
-    <h2>快速采集</h2>
-    <input id="urlInput" placeholder="https://example.com" />
-    <select id="profileSelect"><option value="">不使用登录状态</option></select>
-    <button onclick="runSingle()">开始采集</button>
+  <!-- Tab 1: 采集任务 -->
+  <div id="tab-collect" class="tab-content active">
+    <h2>📌 采集任务</h2>
+    <div class="form-row">
+      <label>采集模式：</label>
+      <select id="collectMode"><option value="generic">通用探测</option><option value="crawler">特化采集</option></select>
+    </div>
+    <div class="form-row" id="crawlerSelectRow" style="display:none;">
+      <label>站点：</label>
+      <select id="crawlerSelect"></select>
+    </div>
+    <div class="form-row">
+      <input id="urlInput" placeholder="https://example.com" style="flex:1;" />
+      <select id="profileSelect"><option value="">不使用登录状态</option></select>
+      <button onclick="startCollect()">开始采集</button>
+    </div>
+    <h3>进行中</h3>
+    <ul id="taskList"><li style="color:#888;">暂无任务</li></ul>
   </div>
 
-  <div id="tab-batch" class="tab-content">
-    <h2>批量任务</h2>
-    <button onclick="runBatch()">执行 tasks.json</button>
+  <!-- Tab 2: 会话管理 -->
+  <div id="tab-sessions" class="tab-content">
+    <h2>🔐 会话管理</h2>
+    <button onclick="loadSessionCards()">🔄 刷新</button>
+    <div id="sessionCards" class="card-grid"></div>
   </div>
 
-  <div id="tab-login" class="tab-content">
-    <h2>登录管理</h2>
-    <input id="profileNameLogin" placeholder="会话名称" />
-    <input id="loginUrlInput" placeholder="登录页 URL" />
-    <input id="verifyUrlInput" placeholder="验证登录的 URL" />
-    <button onclick="startLogin()">启动登录</button>
-    <h3>已有会话</h3>
-    <ul id="profileList"></ul>
-    <button onclick="loadProfiles()">刷新列表</button>
-  </div>
-
+  <!-- Tab 3: 结果分析 -->
   <div id="tab-analyze" class="tab-content">
-    <h2>分析已有结果</h2>
-    <input id="analyzePath" placeholder="output/xxx/harvest-xxx.json" />
-    <button onclick="analyzeResult()">生成报告</button>
-    <iframe id="reportFrame" style="display:none; width:100%; height:500px;"></iframe>
+    <h2>📊 结果分析</h2>
+    <div class="form-row">
+      <select id="resultSelect" style="flex:1;"><option value="">-- 选择结果文件 --</option></select>
+    </div>
+    <div id="resultDetail"></div>
   </div>
 
+  <!-- Tab 4: 服务状态 -->
   <div id="tab-health" class="tab-content">
     <h2>📊 服务状态</h2>
-    <div id="healthDisplay">
-      <p>加载中...</p>
-    </div>
+    <div id="healthDisplay"><p>加载中...</p></div>
     <p><button onclick="fetchHealth()">🔄 刷新</button> 每 10 秒自动刷新</p>
   </div>
 
