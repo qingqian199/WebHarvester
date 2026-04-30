@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>用户中心</title></head>
+<body>
+<div class="header">
+  <a href="#" class="header-login-btn" id="loginLink" style="display:none;">登录</a>
+  <span class="user-avatar" id="userAvatar">U</span>
+  <span class="user-name">测试用户</span>
+</div>
+<div class="profile-content">
+  <h1>用户中心</h1>
+  <p>个人资料页面 — 仅登录用户可访问。</p>
+  <p>E2E 测试通过预置 Cookie 访问此页面，验证 AuthGuard 的会话复用功能。</p>
+</div>
+<script>
+if (document.cookie.includes('SESSDATA=e2e_test_session')) {
+  document.getElementById('loginLink').style.display = 'none';
+} else {
+  document.getElementById('loginLink').style.display = 'inline';
+  document.getElementById('userAvatar').style.display = 'none';
+}
+</script>
+</body></html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>登录 - 测试站点</title></head>
+<body>
+<div id="app">
+  <div class="header"><div class="login-btn" id="loginBtn">登录</div></div>
+  <div class="modal-overlay" id="modal" style="display:none;">
+    <div class="modal">
+      <h2>登录</h2>
+      <form id="loginForm">
+        <input type="email" name="email" placeholder="邮箱" id="username"><br>
+        <input type="password" name="password" placeholder="密码" id="password"><br>
+        <button type="submit">登录</button>
+      </form>
+    </div>
+  </div>
+  <div class="user-info" id="userInfo" style="display:none;">
+    <span class="user-name">测试用户</span>
+    <span class="user-avatar">头像</span>
+  </div>
+  <div class="content"><p>欢迎访问测试站点</p></div>
+</div>
+<script>
+document.getElementById('loginBtn').onclick = function() {
+  document.getElementById('modal').style.display = 'block';
+};
+document.getElementById('loginForm').onsubmit = function(e) {
+  e.preventDefault();
+  document.cookie = 'SESSDATA=e2e_test_session; path=/';
+  document.getElementById('modal').style.display = 'none';
+  document.getElementById('userInfo').style.display = 'block';
+  document.getElementById('loginBtn').style.display = 'none';
+};
+</script>
+</body></html>

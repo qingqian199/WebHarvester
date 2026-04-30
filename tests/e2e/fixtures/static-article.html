@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>测试文章标题</title>
+<meta name="author" content="测试作者">
+</head>
+<body>
+<article>
+<h1>测试文章标题</h1>
+<p>这是第一段正文内容。用于验证轻量 HTTP 引擎能够正确提取文章正文的纯文本和 HTML。这段内容足够长以确保超过静态文档检测的阈值。</p>
+<p>这是第二段正文。包含了更多文字内容以便满足采集引擎对文档长度的要求。E2E 测试将验证采集结果中的标题、作者、正文均正确。</p>
+<p>第三段正文。E2E 测试会检查提取的 content 是否包含这些段落文本，以及 contentHtml 是否保留 HTML 结构。</p>
+<p>第四段。确保字符串长度累积超过 500 字符阈值以便触发 HTTP 引擎决策。再多写一些字让段落变得更长一些。继续填充直到我们确信长度已经足够。</p>
+</article>
+</body></html>
