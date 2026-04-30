@@ -13,6 +13,8 @@ function switchTab(tabId) {
 
 window.onload = async () => {
     await refreshProfileSelect();
+    await fetchHealth();
+    setInterval(fetchHealth, 10000);
 };
 
 async function refreshProfileSelect() {
@@ -114,6 +116,29 @@ async function analyzeResult() {
         }
     } catch (e) {
         log('❌ 接口请求异常');
+    }
+}
+
+async function fetchHealth() {
+    try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        const mb = (bytes) => (bytes / 1024 / 1024).toFixed(1) + ' MB';
+        document.getElementById('healthDisplay').innerHTML = `
+            <table style="width:100%; border-collapse: collapse;">
+                <tr><td style="padding:4px 8px; font-weight:bold;">状态</td><td>✅ 运行中</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">版本</td><td>${data.version}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">运行时间</td><td>${Math.floor(data.uptime / 60)} 分 ${Math.floor(data.uptime % 60)} 秒</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">平台</td><td>${data.platform}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">堆内存</td><td>${mb(data.memoryUsage.heapUsed)} / ${mb(data.memoryUsage.heapTotal)}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">RSS</td><td>${mb(data.memoryUsage.rss)}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">已存会话</td><td>${data.profileCount}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">排队任务</td><td>${data.taskQueueLength}</td></tr>
+                <tr><td style="padding:4px 8px; font-weight:bold;">活跃浏览器</td><td>${data.activeBrowsers}</td></tr>
+            </table>
+        `;
+    } catch {
+        document.getElementById('healthDisplay').innerHTML = '<p style="color:red;">❌ 无法获取服务状态</p>';
     }
 }
 

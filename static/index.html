@@ -12,6 +12,7 @@
     <button class="tab" onclick="switchTab('tab-batch')">批量任务</button>
     <button class="tab" onclick="switchTab('tab-login')">登录管理</button>
     <button class="tab" onclick="switchTab('tab-analyze')">分析报告</button>
+    <button class="tab" onclick="switchTab('tab-health')">服务状态</button>
   </div>
 
   <div id="tab-run" class="tab-content active">
@@ -42,6 +43,14 @@
     <input id="analyzePath" placeholder="output/xxx/harvest-xxx.json" />
     <button onclick="analyzeResult()">生成报告</button>
     <iframe id="reportFrame" style="display:none; width:100%; height:500px;"></iframe>
+  </div>
+
+  <div id="tab-health" class="tab-content">
+    <h2>📊 服务状态</h2>
+    <div id="healthDisplay">
+      <p>加载中...</p>
+    </div>
+    <p><button onclick="fetchHealth()">🔄 刷新</button> 每 10 秒自动刷新</p>
   </div>
 
   <pre id="logBox" class="log-box"></pre>

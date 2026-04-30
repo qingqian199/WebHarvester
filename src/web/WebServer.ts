@@ -2,6 +2,7 @@ import http from "http";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import pkg from "../../package.json";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { PlaywrightAdapter } from "../adapters/PlaywrightAdapter";
 import { FileStorageAdapter } from "../adapters/FileStorageAdapter";
@@ -17,16 +18,18 @@ import { ArticleCaptureService } from "../services/ArticleCaptureService";
 
 export class WebServer {
   private server: http.Server | null = null;
-  private readonly port = 3000;
+  private readonly port: number;
   private readonly logger: ConsoleLogger;
   private readonly sessionManager: FileSessionManager;
 
-  constructor(logger?: ConsoleLogger, sessionManager?: FileSessionManager) {
+  constructor(logger?: ConsoleLogger, sessionManager?: FileSessionManager, port?: number) {
     this.logger = logger ?? new ConsoleLogger();
     this.sessionManager = sessionManager ?? new FileSessionManager();
+    this.port = port ?? 3000;
   }
 
-  async start() {
+  async start(port?: number) {
+    const listenPort = port ?? this.port;
     this.server = http.createServer(async (req, res) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -67,8 +70,8 @@ export class WebServer {
       }
     });
 
-    this.server.listen(this.port, () => {
-      this.logger.info(`🌐 可视化面板：http://localhost:${this.port}`);
+    this.server.listen(listenPort, () => {
+      this.logger.info(`🌐 可视化面板：http://localhost:${listenPort}`);
     });
   }
 
@@ -183,9 +186,12 @@ export class WebServer {
     res.end(JSON.stringify({
       status: "ok",
       uptime: process.uptime(),
-      memory: process.memoryUsage().rss,
+      version: (pkg as any).version || "1.0.0",
       platform: os.platform(),
+      memoryUsage: process.memoryUsage(),
       profileCount,
+      taskQueueLength: 0,
+      activeBrowsers: 0,
     }));
   }
 
