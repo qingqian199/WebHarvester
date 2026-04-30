@@ -1,4 +1,4 @@
-import { XhsCrawler, buildXsCommon, buildXs } from "../XhsCrawler";
+import { XhsCrawler, buildXsCommon } from "../XhsCrawler";
 
 describe("XhsCrawler", () => {
   const crawler = new XhsCrawler();
@@ -34,17 +34,10 @@ describe("XhsCrawler", () => {
     });
   });
 
-  describe("buildXs", () => {
-    it("returns a non-empty hex string", () => {
-      const result = buildXs("1234567890");
+  describe("buildXsCommon", () => {
+    it("returns a non-empty string", () => {
+      const result = buildXsCommon("Mozilla/5.0 Chrome/124", "Win32");
       expect(result).toBeTruthy();
-      expect(result.length).toBeGreaterThan(8);
-    });
-
-    it("produces different outputs for different inputs", () => {
-      const a = buildXs("1000");
-      const b = buildXs("2000");
-      expect(a).not.toBe(b);
     });
   });
 });
