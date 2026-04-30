@@ -32,14 +32,26 @@ HarvesterService.harvest()
 
 ### 已验证有效的 API
 
-- **`GET /api/sns/web/v2/user/me`** — 当前用户信息（code=0）
-- **`GET /api/sns/web/v1/search/recommend?keyword=xxx`** — 搜索关键词推荐（code=1000）
+| 端点 | Code | 说明 |
+|------|:----:|------|
+| `GET /api/sns/web/v2/user/me` | 0 | 当前登录用户信息 |
+| `GET /api/sns/web/v1/search/recommend` | 1000 | 搜索关键词推荐（sug_items） |
+
+### 已验证签名有效但需正确参数的 API
+
+| 端点 | Code | 说明 |
+|------|:----:|------|
+| `GET /api/sns/web/v1/search/notes` (POST) | 300011 | 搜索笔记，触发风控 |
+| `GET /api/sns/web/v1/user_posted` | -1 | 用户帖子列表，参数格式待确认 |
+| `GET /api/sns/web/v1/board/user` | -1 | 收藏列表，参数格式待确认 |
+| `GET /api/sns/web/v1/user/otherinfo` | -1 | 其他用户信息，参数格式待确认 |
 
 ### 注意事项
 
 - 需要有效登录态（`web_session` Cookie），通过扫码登录获取
 - POST 请求可能触发风控（code 300011），需配合完整请求头
-- 部分 API 路径可能随版本更新而变化
+- 部分 API 路径和参数格式需要从 Web 前端网络请求中抓包确认
+- `feed`、`user/following` 等端点的 API 路径可能与预期不符（返回 404）
 
 ## 签名算法说明
 
