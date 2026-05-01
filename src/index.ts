@@ -19,6 +19,7 @@ import { ArticleCaptureService } from "./services/ArticleCaptureService";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
 import { XhsCrawler, XhsApiEndpoints, XhsFallbackEndpoints } from "./adapters/crawlers/XhsCrawler";
 import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS } from "./core/models/ContentUnit";
+import { resolveBilibiliUrl, resolveZhihuUrl, resolveXiaohongshuUrl } from "./utils/url-resolver";
 import { ZhihuCrawler } from "./adapters/crawlers/ZhihuCrawler";
 import { BilibiliCrawler } from "./adapters/crawlers/BilibiliCrawler";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
@@ -274,6 +275,28 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
           def?.requiredParams.forEach((p: string) => neededParams.add(p));
         });
         const userParams: Record<string, string> = { url: action.url };
+
+        // URL 意图解析：自动从 URL 提取 ID，避免追问
+        let resolved: Record<string, string> = {};
+        if (crawler.name === "bilibili") resolved = resolveBilibiliUrl(action.url);
+        else if (crawler.name === "zhihu") resolved = resolveZhihuUrl(action.url);
+        else if (crawler.name === "xiaohongshu") resolved = resolveXiaohongshuUrl(action.url);
+
+        // 对 B站：如果有 bvid，立即转换 aid + mid
+        if (resolved.bvid && !resolved.aid) {
+          try {
+            const { default: biliFetch } = await import("node-fetch");
+            const r = await biliFetch("https://api.bilibili.com/x/web-interface/view?bvid=" + resolved.bvid);
+            const d = await r.json() as any;
+            if (d.data?.aid) resolved.aid = String(d.data.aid);
+            if (d.data?.owner?.mid) resolved.mid = String(d.data.owner.mid);
+          } catch {}
+        }
+
+        // 将解析出的参数合并，已存在的跳过追问
+        for (const [k, v] of Object.entries(resolved)) {
+          if (v && !userParams[k]) userParams[k] = v;
+        }
         for (const p of neededParams) {
           if (!userParams[p]) {
             const { val } = await inq.prompt([{ type: "input", name: "val", message: `请输入 ${p}：` }]);
