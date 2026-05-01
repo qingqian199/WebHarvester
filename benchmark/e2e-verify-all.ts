@@ -37,7 +37,7 @@ async function testCrawler(
   console.log(`  Session: ${session ? "✅ " + session.cookies.length + " cookies" : "❌ 无"}`);
   console.log(`  单元数: ${unitIds.length}`);
   console.log(`  参数: ${JSON.stringify(params)}`);
-  console.log(`=").repeat(60)}`);
+  console.log("=\").repeat(60)}");
 
   const startAll = Date.now();
   const results = await crawler.collectUnits(unitIds, params, session);

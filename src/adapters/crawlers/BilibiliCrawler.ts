@@ -34,10 +34,16 @@ export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
   // ✅ 已验证（WBI 签名通过）
   { name: "视频信息", path: "/x/web-interface/wbi/view/detail", needWbi: true, params: "aid=116435892372604", status: "verified" },
 
-  // 🔶 待验证
-  { name: "弹幕数据", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid=37660265907&type=1&segment_index=1", status: "sig_pending" },
+  // ✅ 采集结果确认参数，无需 WBI 签名
+  { name: "弹幕列表", path: "/x/v2/dm/web/view", params: "oid=37660265907&type=1", status: "verified" },
+  { name: "字幕信息", path: "/x/v2/subtitle/web/view", params: "oid=37660265907", status: "verified" },
+  { name: "直播间信息", path: "/xlive/web-room/v1/index/getRoomBaseInfo", params: "uids=173323339&req_biz=video", status: "verified" },
+
+  // 🔶 需要 WBI 签名
+  { name: "弹幕数据(分段)", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid=37660265907&type=1&segment_index=1", status: "sig_pending" },
   { name: "用户空间信息", path: "/x/space/wbi/acc/info", needWbi: true, params: "mid=316627722", status: "sig_pending" },
   { name: "热门搜索", path: "/x/web-interface/wbi/search/default", needWbi: true, params: "", status: "sig_pending" },
+  { name: "视频推荐", path: "/x/web-interface/wbi/index/top/feed/rcmd", needWbi: true, params: "fresh_type=3", status: "sig_pending" },
 ];
 
 /**

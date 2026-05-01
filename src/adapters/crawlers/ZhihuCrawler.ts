@@ -32,11 +32,19 @@ export const ZhihuApiEndpoints: ReadonlyArray<ZhihuEndpointDef> = [
   { name: "成员信息", path: "/api/v4/members/{member_id}", params: "include=gender,locations,employments", status: "verified" },
   { name: "热门搜索", path: "/api/v4/search/hot_search", status: "verified" },
 
+  // ✅ 采集结果确认参数，签名已验证通过
+  { name: "专栏文章推荐", path: "/api/articles/{article_id}/recommendation", params: "include=data%5B*%5D.article.column&limit=5", status: "verified" },
+  { name: "关注关系", path: "/api/v4/members/{member_id}/relations/mutuals", params: "include=data%5B*%5D.answer_count&limit=5", status: "verified" },
+  { name: "搜索预设词", path: "/api/v4/search/preset_words", status: "verified" },
+  { name: "文章关系", path: "/api/v4/articles/{article_id}/relationship", params: "desktop=true", status: "verified" },
+  { name: "专栏投稿请求", path: "/api/v4/articles/{article_id}/contribute_requests", status: "verified" },
+  { name: "文章标签", path: "/api/v4/articles/{article_id}/labels/v3", status: "verified" },
+  { name: "会员权益弹窗", path: "/api/v4/unlimited/vip_rights/popup", params: "token=", status: "verified" },
+  { name: "专栏投稿", path: "/api/v4/members/{member_id}/column-contributions", params: "limit=5", status: "verified" },
+
   // 🔶 待验证
-  { name: "文章详情（专栏）", path: "/api/articles/{article_id}", status: "sig_pending" },
-  { name: "文章推荐", path: "/api/articles/{article_id}/recommendation", params: "include=data%5B*%5D.article.column&limit=5", status: "sig_pending" },
-  { name: "搜索预设词", path: "/api//v4/search/preset_words", status: "sig_pending" },
   { name: "文章评论", path: "/api/v4/comment_v5/articles/{article_id}/root_comment", params: "order_by=score&limit=5", status: "sig_pending" },
+  { name: "评论配置", path: "/api/v4/comment_v5/articles/{article_id}/config", status: "sig_pending" },
 ];
 
 /**
