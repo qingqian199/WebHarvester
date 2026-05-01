@@ -87,11 +87,11 @@ function switchCaptureTab() {
   loadUnits();
 }
 
-function selectSite(id, el) {
+async function selectSite(id, cardEl) {
   wizardSite = id;
   qsa(".site-card").forEach(c => c.classList.remove("selected"));
-  el.classList.add("selected");
-  loadUnits();
+  cardEl.classList.add("selected");
+  await loadUnits();
 }
 
 async function loadUnits() {
@@ -105,13 +105,15 @@ async function loadUnits() {
   updateWizardParams();
 }
 
-function wizardGo(step) {
+async function wizardGo(step) {
   qsa(".wizard-step-content").forEach(s => s.classList.remove("active"));
   qsa(".step").forEach(s => s.classList.remove("active"));
-  el("wizardStep" + step).classList.add("active");
+  const target = el("wizardStep" + step);
+  if (!target) { console.error("wizardStep" + step + " not found"); return; }
+  target.classList.add("active");
   qsa(".step").forEach(s => { if (parseInt(s.dataset.step) <= step) s.classList.add("active"); });
-  if (step === 1) switchCaptureTab();
-  if (step === 2) loadUnits();
+  if (step === 1) { switchCaptureTab(); await loadUnits(); }
+  if (step === 2) await loadUnits();
 }
 
 function wizardNext() {
