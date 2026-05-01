@@ -18,8 +18,16 @@ export const XhsApiEndpoints: ReadonlyArray<{
   path: string;
   defaultParams: string;
 }> = [
-  { name: "用户信息（当前）", path: "/api/sns/web/v2/user/me", defaultParams: "" },
+  // ── 已验证可用（签名通过） ──
+  { name: "用户信息", path: "/api/sns/web/v2/user/me", defaultParams: "" },
   { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E" },
+
+  // ── 已验证可用（从采集结果确认参数后验证通过） ──
+  { name: "系统配置", path: "/api/sns/web/v1/system/config", defaultParams: "" },
+  { name: "区域列表", path: "/api/sns/web/v1/zones", defaultParams: "" },
+
+  // ── 参数已确认但签名偏差导致 code=-1 ──
+  { name: "收藏列表", path: "/api/sns/web/v1/board/user", defaultParams: "user_id=PLACEHOLDER&num=15&page=1" },
 ] as const;
 
 /**
