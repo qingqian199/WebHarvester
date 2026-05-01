@@ -13,21 +13,42 @@ const XHS_API_HOST = "edith.xiaohongshu.com";
  * path   — API 路径。
  * params — 默认查询参数。
  */
-export const XhsApiEndpoints: ReadonlyArray<{
+/** 小红书 API 端点定义。 */
+export interface XhsEndpointDef {
   name: string;
   path: string;
-  defaultParams: string;
-}> = [
-  // ── 已验证可用（签名通过） ──
-  { name: "用户信息", path: "/api/sns/web/v2/user/me", defaultParams: "" },
-  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E" },
+  /** HTTP 方法，默认 GET。 */
+  method?: string;
+  /** 查询参数字符串（GET），或 JSON 体格式 POST 时默认 body 的模板。用 {} 表示运行时填充。 */
+  params?: string;
+  /**
+   * POST 时请求体模板 JSON。字段值中的 {} 在 fetchApi 时会被替换。
+   * 例: keyword={keyword} 会被用户输入的 keyword 替换。
+   */
+  bodyTemplate?: Record<string, any>;
+}
 
-  // ── 已验证可用（从采集结果确认参数后验证通过） ──
-  { name: "系统配置", path: "/api/sns/web/v1/system/config", defaultParams: "" },
-  { name: "区域列表", path: "/api/sns/web/v1/zones", defaultParams: "" },
+export const XhsApiEndpoints: ReadonlyArray<XhsEndpointDef> = [
+  // ── 已验证可用（签名通过） ──
+  { name: "用户信息", path: "/api/sns/web/v2/user/me" },
+  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", params: "keyword=%E5%8E%9F%E7%A5%9E" },
+  { name: "系统配置", path: "/api/sns/web/v1/system/config" },
+  { name: "区域列表", path: "/api/sns/web/v1/zones" },
+
+  // ── 新验证通过（从采集结果确认后验证 code=0） ──
+  { name: "未读消息", path: "/api/sns/web/unread_count" },
+
+  // ── 采集结果确认参数，但签名偏差或风控导致未通过 ──
+  { name: "搜索筛选", path: "/api/sns/web/v1/search/filter", params: "keyword=%E5%8E%9F%E7%A5%9E&search_id={search_id}" },
+
+  // ── POST 端点（body 结构从 harvest 采集结果提取） ──
+  { name: "搜索笔记", path: "/api/sns/web/v1/search/notes", method: "POST",
+    bodyTemplate: { keyword: "原神", page: 1, page_size: 20, search_id: "{search_id}", sort: "general", note_type: 0, ext_flags: [], image_formats: ["jpg", "webp", "avif"] } },
+  { name: "搜索一站式", path: "/api/sns/web/v1/search/onebox", method: "POST",
+    bodyTemplate: { keyword: "原神", search_id: "{search_id}", biz_type: "web_search_user", request_id: "{request_id}" } },
 
   // ── 参数已确认但签名偏差导致 code=-1 ──
-  { name: "收藏列表", path: "/api/sns/web/v1/board/user", defaultParams: "user_id=PLACEHOLDER&num=15&page=1" },
+  { name: "收藏列表", path: "/api/sns/web/v1/board/user", params: "user_id=PLACEHOLDER&num=15&page=1" },
 ] as const;
 
 /**
@@ -145,12 +166,40 @@ export class XhsCrawler implements ISiteCrawler {
    * @param params 查询参数字符串（如 "keyword=test"），不传则使用默认参数。
    * @param session 可选登录态。
    */
-  async fetchApi(endpointName: string, params?: string, session?: CrawlerSession): Promise<PageData> {
+  async fetchApi(endpointName: string, params?: Record<string, string>, session?: CrawlerSession): Promise<PageData> {
     const ep = XhsApiEndpoints.find((e) => e.name === endpointName);
     if (!ep) throw new Error(`未知端点: ${endpointName}`);
-    const query = params ?? ep.defaultParams;
+
+    const method = ep.method ?? "GET";
+
+    if (method === "POST" && ep.bodyTemplate) {
+      const body = this.fillTemplate(ep.bodyTemplate, params ?? {});
+      const bodyStr = JSON.stringify(body);
+      const url = `https://${XHS_API_HOST}${ep.path}`;
+      return this.fetch(url, session, { method: "POST", body: bodyStr,
+        contentType: "application/json;charset=UTF-8" });
+    }
+
+    const query = params
+      ? Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&")
+      : (ep.params ?? "");
     const url = `https://${XHS_API_HOST}${ep.path}${query ? "?" + query : ""}`;
     return this.fetch(url, session);
+  }
+
+  private fillTemplate(tpl: Record<string, any>, params: Record<string, string>): Record<string, any> {
+    const result: Record<string, any> = {};
+    for (const [k, v] of Object.entries(tpl)) {
+      if (typeof v === "string" && v.startsWith("{") && v.endsWith("}")) {
+        const key = v.slice(1, -1);
+        result[k] = params[key] ?? v;
+      } else if (typeof v === "string" && params[k]) {
+        result[k] = params[k];
+      } else {
+        result[k] = v;
+      }
+    }
+    return result;
   }
 }
 
