@@ -35,16 +35,19 @@ export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
   // ✅ 已验证（WBI 签名通过）
   { name: "视频信息", path: "/x/web-interface/wbi/view/detail", needWbi: true, params: "aid=116435892372604", status: "verified" },
 
-  // ✅ 采集结果确认参数，无需 WBI 签名
+  // ✅ 已验证（无需 WBI 签名）
   { name: "弹幕列表", path: "/x/v2/dm/web/view", params: "oid=37660265907&type=1", status: "verified" },
   { name: "字幕信息", path: "/x/v2/subtitle/web/view", params: "oid=37660265907", status: "verified" },
   { name: "直播间信息", path: "/xlive/web-room/v1/index/getRoomBaseInfo", params: "uids=173323339&req_biz=video", status: "verified" },
+  { name: "视频评论", path: "/x/v2/reply/main", params: "oid={oid}&type=1&mode=3&ps=5", status: "verified" },
 
-  // 🔶 需要 WBI 签名
+  // ✅ 搜索（WBI 签名验证通过）
+  { name: "搜索综合", path: "/x/web-interface/wbi/search/all/v2", needWbi: true, params: "keyword=%E5%8E%9F%E7%A5%9E&page=1", status: "verified" },
+  { name: "搜索 type", path: "/x/web-interface/wbi/search/type", needWbi: true, params: "keyword=%E5%8E%9F%E7%A5%9E&search_type=video&page=1", status: "verified" },
+
+  // 🔶 待验证
   { name: "弹幕数据(分段)", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid=37660265907&type=1&segment_index=1", status: "sig_pending" },
   { name: "用户空间信息", path: "/x/space/wbi/acc/info", needWbi: true, params: "mid=316627722", status: "sig_pending" },
-  { name: "热门搜索", path: "/x/web-interface/wbi/search/default", needWbi: true, params: "", status: "sig_pending" },
-  { name: "视频推荐", path: "/x/web-interface/wbi/index/top/feed/rcmd", needWbi: true, params: "fresh_type=3", status: "sig_pending" },
 ];
 
 /**
@@ -109,6 +112,13 @@ export class BilibiliCrawler implements ISiteCrawler {
       const merged = new URLSearchParams(ep.params || "");
       for (const [k, v] of Object.entries(params)) merged.set(k, v);
       query = merged.toString();
+    }
+
+    // 替换 params 中的 {oid} 等模板变量
+    if (params) {
+      for (const [k, v] of Object.entries(params)) {
+        query = query.replace(`{${k}}`, encodeURIComponent(v));
+      }
     }
 
     if (ep.needWbi) {
@@ -185,6 +195,15 @@ export class BilibiliCrawler implements ISiteCrawler {
             break;
           }
           case "bili_search": {
+            // 优先签名直连，降级到页面提取
+            try {
+              const r = await this.fetchApi("搜索 type", { keyword: params.keyword || "", search_type: "video", page: "1" }, session);
+              const d = JSON.parse(r.body);
+              if (d.code === 0) {
+                results.push({ unit, status: "success", data: d, method: "signature", responseTime: r.responseTime });
+                break;
+              }
+            } catch {}
             const r = await this.fetchPageData("B站搜索", { keyword: params.keyword || "" }, session);
             const parsed = JSON.parse(r.body);
             results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
@@ -194,6 +213,14 @@ export class BilibiliCrawler implements ISiteCrawler {
             const r = await this.fetchPageData("用户视频列表", { mid: params.mid || "" }, session);
             const parsed = JSON.parse(r.body);
             results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          case "bili_video_comments": {
+            const oid = params.oid || params.aid || "";
+            if (!oid) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 oid", responseTime: 0 }); break; }
+            const r = await this.fetchApi("视频评论", { oid }, session);
+            const d = JSON.parse(r.body);
+            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime });
             break;
           }
           default:
