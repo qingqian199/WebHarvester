@@ -27,10 +27,12 @@ export const XhsApiEndpoints: ReadonlyArray<{
   { name: "用户信息（当前）", path: "/api/sns/web/v2/user/me", defaultParams: "", status: "verified" },
   { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E", status: "verified" },
 
-  // ── 签名有效，参数待修复 ──
-  { name: "用户帖子列表", path: "/api/sns/web/v1/user_posted", defaultParams: "user_id=PLACEHOLDER&num=5", status: "param_pending" },
-  { name: "收藏列表", path: "/api/sns/web/v1/board/user", defaultParams: "user_id=PLACEHOLDER&num=5", status: "param_pending" },
-  { name: "其他用户信息", path: "/api/sns/web/v1/user/otherinfo", defaultParams: "target_user_id=PLACEHOLDER", status: "param_pending" },
+  // ── 采集结果已确认参数名（user_id/num/page），但仍返回 -1 ──
+  //   原因：Harvest 中该请求由真实前端签名（code=200），而 XhsCrawler 签名
+  //   生成算法与前端不完全一致。参数名正确，需优化签名算法而非参数。
+  { name: "收藏列表（已知参数）", path: "/api/sns/web/v1/board/user", defaultParams: "user_id=PLACEHOLDER&num=5&page=1", status: "param_pending" },
+  { name: "用户帖子列表（已知参数）", path: "/api/sns/web/v1/user_posted", defaultParams: "user_id=PLACEHOLDER&num=5", status: "param_pending" },
+  { name: "其他用户信息（已知参数）", path: "/api/sns/web/v1/user/otherinfo", defaultParams: "target_user_id=PLACEHOLDER", status: "param_pending" },
 
   // ── 签名有效但触发风控 ──
   { name: "搜索笔记", path: "/api/sns/web/v1/search/notes", defaultParams: "", status: "risk_ctrl" },
@@ -128,7 +130,7 @@ export class XhsCrawler implements ISiteCrawler {
     if (!ep) throw new Error(`未知端点: ${endpointName}`);
 
     if (ep.status === "param_pending") {
-      console.warn(`⚠️ ${ep.name} 参数格式待确认，参考: ${ep.defaultParams}`);
+      console.warn(`⚠️ ${ep.name} — 参数名已确认，但签名算法需优化（返回 -1）`);
     }
     if (ep.status === "risk_ctrl") {
       console.warn(`⚠️ ${ep.name} 可能触发风控（code 300011），请确保请求间隔`);
