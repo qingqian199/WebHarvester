@@ -246,9 +246,12 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
     if (crawler.name === "xiaohongshu") {
       const { default: inq } = await import("inquirer");
 
-      // 构建菜单：签名直连 + 兜底方案
+      // 构建菜单：签名直连（含状态标记）+ 兜底方案
+      const statusIcon = (s: string) => s === "verified" ? "✅" : s === "risk_ctrl" ? "⛔" : "🔶";
+      const statusText = (s: string) => s === "verified" ? "" : s === "risk_ctrl" ? "(风控)" : "(签名待优化)";
       const sigChoices = XhsApiEndpoints.map((e: any) => ({
-        name: `🔵 ${e.name} (签名直连)`, value: `sig:${e.name}`,
+        name: `${statusIcon(e.status ?? "sig_pending")} ${e.name} ${statusText(e.status ?? "sig_pending")}`.trim(),
+        value: `sig:${e.name}`,
       }));
       const fallbackChoices = XhsFallbackEndpoints.map((e: any) => ({
         name: `🟠 ${e.name} (页面提取)`, value: `fb:${e.name}`,
@@ -266,12 +269,21 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
         // 签名直连
         const epName = selected.slice(4);
         const ep = XhsApiEndpoints.find((e: any) => e.name === epName);
-        let params = ep?.defaultParams ?? "";
-        if (ep?.defaultParams) {
-          const { p } = await inq.prompt([{ type: "input", name: "p", message: "查询参数（留空默认）：", default: ep.defaultParams }]);
-          params = p;
+        if (ep?.status === "risk_ctrl") {
+          console.log("\n⛔ 注意：该端点可能触发风控（code 300011）");
+          console.log("建议：稍后重试、更换账号，或使用页面提取兜底方案\n");
         }
-        const result = await (crawler as any).fetchApi(epName, params, session);
+        let paramsStr = ep?.params ?? "";
+        if (ep?.params) {
+          const { p } = await inq.prompt([{ type: "input", name: "p", message: "查询参数（留空默认）：", default: ep.params }]);
+          paramsStr = p;
+        }
+        const paramsRecord: Record<string, string> = {};
+        paramsStr.split("&").filter(Boolean).forEach((pair) => {
+          const [k, ...vs] = pair.split("=");
+          if (k) paramsRecord[k] = decodeURIComponent(vs.join("="));
+        });
+        const result = await (crawler as any).fetchApi(epName, paramsRecord, session);
         const outDir = path.resolve("output", crawler.name);
         await fs.mkdir(outDir, { recursive: true });
         const outFile = path.join(outDir, `${crawler.name}-${epName}-${Date.now()}.json`);

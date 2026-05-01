@@ -23,32 +23,31 @@ export interface XhsEndpointDef {
   params?: string;
   /**
    * POST 时请求体模板 JSON。字段值中的 {} 在 fetchApi 时会被替换。
-   * 例: keyword={keyword} 会被用户输入的 keyword 替换。
    */
   bodyTemplate?: Record<string, any>;
+  /** 端点状态：verified / risk_ctrl / sig_pending */
+  status?: "verified" | "risk_ctrl" | "sig_pending";
 }
 
 export const XhsApiEndpoints: ReadonlyArray<XhsEndpointDef> = [
-  // ── 已验证可用（签名通过） ──
-  { name: "用户信息", path: "/api/sns/web/v2/user/me" },
-  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", params: "keyword=%E5%8E%9F%E7%A5%9E" },
-  { name: "系统配置", path: "/api/sns/web/v1/system/config" },
-  { name: "区域列表", path: "/api/sns/web/v1/zones" },
+  // ── ✅ 已验证可用（签名通过，code=0/1000） ──
+  { name: "用户信息", path: "/api/sns/web/v2/user/me", status: "verified" },
+  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", params: "keyword=%E5%8E%9F%E7%A5%9E", status: "verified" },
+  { name: "系统配置", path: "/api/sns/web/v1/system/config", status: "verified" },
+  { name: "区域列表", path: "/api/sns/web/v1/zones", status: "verified" },
+  { name: "未读消息", path: "/api/sns/web/unread_count", status: "verified" },
 
-  // ── 新验证通过（从采集结果确认后验证 code=0） ──
-  { name: "未读消息", path: "/api/sns/web/unread_count" },
-
-  // ── 采集结果确认参数，但签名偏差或风控导致未通过 ──
-  { name: "搜索筛选", path: "/api/sns/web/v1/search/filter", params: "keyword=%E5%8E%9F%E7%A5%9E&search_id={search_id}" },
-
-  // ── POST 端点（body 结构从 harvest 采集结果提取） ──
+  // ── ⛔ 触发风控（签名有效但被限，code=300011） ──
   { name: "搜索笔记", path: "/api/sns/web/v1/search/notes", method: "POST",
-    bodyTemplate: { keyword: "原神", page: 1, page_size: 20, search_id: "{search_id}", sort: "general", note_type: 0, ext_flags: [], image_formats: ["jpg", "webp", "avif"] } },
-  { name: "搜索一站式", path: "/api/sns/web/v1/search/onebox", method: "POST",
-    bodyTemplate: { keyword: "原神", search_id: "{search_id}", biz_type: "web_search_user", request_id: "{request_id}" } },
+    bodyTemplate: { keyword: "原神", page: 1, page_size: 20, search_id: "{search_id}", sort: "general", note_type: 0, ext_flags: [], image_formats: ["jpg", "webp", "avif"] },
+    status: "risk_ctrl" },
 
-  // ── 参数已确认但签名偏差导致 code=-1 ──
-  { name: "收藏列表", path: "/api/sns/web/v1/board/user", params: "user_id=PLACEHOLDER&num=15&page=1" },
+  // ── 🔶 签名偏差（采集结果有数据，签名后返回 -1） ──
+  { name: "搜索一站式", path: "/api/sns/web/v1/search/onebox", method: "POST",
+    bodyTemplate: { keyword: "原神", search_id: "{search_id}", biz_type: "web_search_user", request_id: "{request_id}" },
+    status: "sig_pending" },
+  { name: "搜索筛选", path: "/api/sns/web/v1/search/filter", params: "keyword=%E5%8E%9F%E7%A5%9E&search_id={search_id}", status: "sig_pending" },
+  { name: "收藏列表", path: "/api/sns/web/v1/board/user", params: "user_id=PLACEHOLDER&num=15&page=1", status: "sig_pending" },
 ] as const;
 
 /**
