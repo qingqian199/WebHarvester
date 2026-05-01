@@ -5,6 +5,7 @@ import { ConsoleLogger } from "../ConsoleLogger";
 import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { buildSignedQuery } from "../../utils/crypto/bilibili-signer";
 import { UnitResult } from "../../core/models/ContentUnit";
+import { resolveBilibiliUrl } from "../../utils/url-resolver";
 
 const BILI_DOMAIN = "bilibili.com";
 const BILI_API_HOST = "api.bilibili.com";
@@ -157,6 +158,21 @@ export class BilibiliCrawler implements ISiteCrawler {
   }
 
   async collectUnits(units: string[], params: Record<string, string>, session?: CrawlerSession, _authMode?: string): Promise<UnitResult[]> {
+    if (params.url) {
+      const resolved = resolveBilibiliUrl(params.url);
+      for (const [k, v] of Object.entries(resolved)) {
+        if (!params[k]) params[k] = v;
+      }
+      // 如果只有 bvid，调用视频信息 API 获取 aid 和 mid
+      if (params.bvid && !params.aid) {
+        try {
+          const r = await this.fetchApi("视频信息", { aid: params.bvid }, session);
+          const d = JSON.parse(r.body);
+          if (d.data?.View?.aid) params.aid = String(d.data.View.aid);
+          if (d.data?.View?.owner?.mid) params.mid = String(d.data.View.owner.mid);
+        } catch {}
+      }
+    }
     const results: UnitResult[] = [];
     for (const unit of units) {
       const start = Date.now();

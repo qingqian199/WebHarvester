@@ -5,6 +5,7 @@ import { generateZse96, generateApiVersion } from "../../utils/crypto/zhihu-sign
 import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
 import { UnitResult } from "../../core/models/ContentUnit";
+import { resolveZhihuUrl } from "../../utils/url-resolver";
 
 export const ZhihuFallbackEndpoints: ReadonlyArray<{
   name: string; pageUrl: string; dataPath: string;
@@ -172,6 +173,12 @@ export class ZhihuCrawler implements ISiteCrawler {
   }
 
   async collectUnits(units: string[], params: Record<string, string>, session?: CrawlerSession, _authMode?: string): Promise<UnitResult[]> {
+    if (params.url) {
+      const resolved = resolveZhihuUrl(params.url);
+      for (const [k, v] of Object.entries(resolved)) {
+        if (!params[k]) params[k] = v;
+      }
+    }
     const results: UnitResult[] = [];
     for (const unit of units) {
       const start = Date.now();

@@ -5,6 +5,7 @@ import { generateXsHeader } from "../../utils/crypto/xhs-signer";
 import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
 import { XhsContentUnit, UnitResult } from "../../core/models/ContentUnit";
+import { resolveXiaohongshuUrl } from "../../utils/url-resolver";
 
 const XHS_DOMAIN = "xiaohongshu.com";
 const XHS_API_HOST = "edith.xiaohongshu.com";
@@ -292,6 +293,13 @@ export class XhsCrawler implements ISiteCrawler {
     session?: CrawlerSession,
     authMode: "logged_in" | "guest" = "logged_in",
   ): Promise<UnitResult[]> {
+    // URL 意图解析：如果提供了 url 参数，自动提取 ID
+    if (params.url) {
+      const resolved = resolveXiaohongshuUrl(params.url);
+      for (const [k, v] of Object.entries(resolved)) {
+        if (!params[k]) params[k] = v;
+      }
+    }
     const results: UnitResult[] = [];
 
     for (const unit of units) {
