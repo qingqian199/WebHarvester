@@ -6,6 +6,7 @@ import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { buildSignedQuery } from "../../utils/crypto/bilibili-signer";
 import { UnitResult } from "../../core/models/ContentUnit";
 import { resolveBilibiliUrl } from "../../utils/url-resolver";
+import { buildBrowserHeaders } from "../../utils/browser-env";
 
 const BILI_DOMAIN = "bilibili.com";
 const BILI_API_HOST = "api.bilibili.com";
@@ -80,15 +81,10 @@ export class BilibiliCrawler implements ISiteCrawler {
     const cookieStr = (session?.cookies ?? []).map((c) => `${c.name}=${c.value}`).join("; ");
     const fp = this.fp.getFingerprint();
 
+    const referer = url.includes("space.bilibili.com") ? url.replace(/\?.*$/, "") : "https://www.bilibili.com/";
+    const baseHeaders = buildBrowserHeaders(fp, referer);
     const headers: Record<string, string> = {
-      "User-Agent": fp.userAgent,
-      "Accept-Language": fp.acceptLanguage,
-      "Accept": "application/json, text/plain, */*",
-      "Referer": url.includes("space.bilibili.com") ? url.replace(/\?.*$/, "") : "https://www.bilibili.com/",
-      "Origin": "https://www.bilibili.com",
-      "sec-ch-ua": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": "\"Windows\"",
+      ...baseHeaders,
       ...(cookieStr ? { Cookie: cookieStr } : {}),
     };
 

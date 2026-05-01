@@ -6,6 +6,7 @@ import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
 import { XhsContentUnit, UnitResult } from "../../core/models/ContentUnit";
 import { resolveXiaohongshuUrl } from "../../utils/url-resolver";
+import { buildBrowserHeaders } from "../../utils/browser-env";
 
 const XHS_DOMAIN = "xiaohongshu.com";
 const XHS_API_HOST = "edith.xiaohongshu.com";
@@ -103,12 +104,9 @@ export class XhsCrawler implements ISiteCrawler {
     const method = options?.method ?? "GET";
     const body = options?.body ?? "";
 
+    const baseHeaders = buildBrowserHeaders(fp, "https://www.xiaohongshu.com/");
     const headers: Record<string, string> = {
-      "User-Agent": fp.userAgent,
-      "Accept-Language": fp.acceptLanguage,
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://www.xiaohongshu.com/",
-      "Origin": "https://www.xiaohongshu.com",
+      ...baseHeaders,
       ...(cookieStr ? { Cookie: cookieStr } : {}),
     };
 

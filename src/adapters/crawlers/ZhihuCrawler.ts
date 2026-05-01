@@ -6,6 +6,7 @@ import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
 import { UnitResult } from "../../core/models/ContentUnit";
 import { resolveZhihuUrl } from "../../utils/url-resolver";
+import { buildBrowserHeaders } from "../../utils/browser-env";
 
 export const ZhihuFallbackEndpoints: ReadonlyArray<{
   name: string; pageUrl: string; dataPath: string;
@@ -74,10 +75,9 @@ export class ZhihuCrawler implements ISiteCrawler {
     const pathOnly = parsed.pathname;
     const queryOnly = parsed.search.replace("?", "");
 
+    const baseHeaders = buildBrowserHeaders(fp, "https://www.zhihu.com/");
     const headers: Record<string, string> = {
-      "User-Agent": fp.userAgent,
-      "Accept-Language": fp.acceptLanguage,
-      "Accept": "application/json, text/plain, */*",
+      ...baseHeaders,
       "Referer": "https://www.zhihu.com/",
       "Origin": "https://www.zhihu.com",
       "x-api-version": generateApiVersion(),
