@@ -115,9 +115,11 @@ export class BilibiliCrawler implements ISiteCrawler {
       query = merged.toString();
     }
 
-    // 替换 params 中的 {oid} 等模板变量
+    // 替换 params 中的 {oid} 等模板变量，且 aid 可替代 oid
     if (params) {
-      for (const [k, v] of Object.entries(params)) {
+      const merged = { ...params };
+      if (merged.aid && !merged.oid) merged.oid = merged.aid;
+      for (const [k, v] of Object.entries(merged)) {
         query = query.replace(`{${k}}`, encodeURIComponent(v));
       }
     }

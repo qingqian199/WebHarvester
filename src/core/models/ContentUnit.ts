@@ -48,7 +48,7 @@ export const BILI_CONTENT_UNITS: ContentUnitDef[] = [
   { id: "bili_video_info", label: "视频信息", requiredParams: ["aid"], description: "标题、播放量、UP主" },
   { id: "bili_search", label: "搜索视频", requiredParams: ["keyword"], description: "搜索B站视频" },
   { id: "bili_user_videos", label: "UP主视频列表", requiredParams: ["mid"], description: "UP主所有视频" },
-  { id: "bili_video_comments", label: "视频评论", requiredParams: ["oid"], description: "视频评论列表" },
+  { id: "bili_video_comments", label: "视频评论", requiredParams: ["aid"], description: "视频评论列表" },
 ];
 
 /** 单个单元的采集结果。 */
