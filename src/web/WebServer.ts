@@ -243,7 +243,7 @@ export class WebServer {
   }
 
   private async handleApiResultDetail(req: http.IncomingMessage, res: http.ServerResponse) {
-    const rawName = req.url!.replace("/api/results/", "");
+    const rawName = decodeURIComponent(req.url!.replace("/api/results/", ""));
     const safeName = path.normalize(rawName).replace(/^(\.\.(\/|\\))+/, "");
     const fullPath = path.resolve("output", safeName);
     if (!fullPath.startsWith(path.resolve("output"))) {
