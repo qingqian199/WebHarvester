@@ -84,8 +84,11 @@ export class BilibiliCrawler implements ISiteCrawler {
       "User-Agent": fp.userAgent,
       "Accept-Language": fp.acceptLanguage,
       "Accept": "application/json, text/plain, */*",
-      "Referer": "https://www.bilibili.com/",
+      "Referer": url.includes("space.bilibili.com") ? url.replace(/\?.*$/, "") : "https://www.bilibili.com/",
       "Origin": "https://www.bilibili.com",
+      "sec-ch-ua": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": "\"Windows\"",
       ...(cookieStr ? { Cookie: cookieStr } : {}),
     };
 
@@ -192,9 +195,22 @@ export class BilibiliCrawler implements ISiteCrawler {
       try {
         switch (unit) {
           case "bili_video_info": {
-            const r = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime });
+            let r = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
+            let d = JSON.parse(r.body);
+            // -352 风控：重试一次，仍失败则降级到页面提取
+            if (d.code === -352) {
+              console.warn("⚠️ B站签名触发风控 -352，3秒后重试...");
+              await new Promise((r) => setTimeout(r, 3000));
+              r = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
+              d = JSON.parse(r.body);
+            }
+            if (d.code === 0) {
+              results.push({ unit, status: "success", data: d, method: "signature", responseTime: r.responseTime });
+            } else {
+              console.warn("⚠️ B站签名 -352 重试仍失败，降级到页面提取");
+              const pr = await this.fetchPageData("视频详情", { bvid: params.bvid || params.aid || "" }, session);
+              results.push({ unit, status: "partial", data: JSON.parse(pr.body), method: "html_extract", responseTime: pr.responseTime, error: "签名风控，降级到页面提取" });
+            }
             break;
           }
           case "bili_search": {
@@ -232,9 +248,15 @@ export class BilibiliCrawler implements ISiteCrawler {
           case "bili_video_comments": {
             const oid = params.oid || params.aid || "";
             if (!oid) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 oid", responseTime: 0 }); break; }
-            const r = await this.fetchApi("视频评论", { oid }, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime });
+            let r = await this.fetchApi("视频评论", { oid }, session);
+            let d = JSON.parse(r.body);
+            if (d.code === -352) {
+              console.warn("⚠️ B站评论签名 -352，3秒后重试...");
+              await new Promise((r2) => setTimeout(r2, 3000));
+              r = await this.fetchApi("视频评论", { oid }, session);
+              d = JSON.parse(r.body);
+            }
+            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime, error: d.code !== 0 ? `code=${d.code}` : undefined });
             break;
           }
           default:
