@@ -18,6 +18,7 @@ import { LoginOracle } from "./utils/login-oracle";
 import { ArticleCaptureService } from "./services/ArticleCaptureService";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
 import { XhsCrawler, XhsApiEndpoints, XhsFallbackEndpoints } from "./adapters/crawlers/XhsCrawler";
+import { XHS_CONTENT_UNITS } from "./core/models/ContentUnit";
 import { ZhihuCrawler } from "./adapters/crawlers/ZhihuCrawler";
 import { BilibiliCrawler } from "./adapters/crawlers/BilibiliCrawler";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
@@ -244,11 +245,65 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
   }
 
   try {
-    // 如果是小红书，显示端点菜单
+    // 如果是小红书，显示内容单元菜单
     if (crawler.name === "xiaohongshu") {
       const { default: inq } = await import("inquirer");
 
-      // 构建菜单：签名直连（含状态标记）+ 兜底方案
+      // 先选择采集模式：组合采集 / 高级
+      const { mode } = await inq.prompt([{ type: "list", name: "mode", message: "选择采集模式：", choices: [
+        { name: "📦 组合采集（推荐）", value: "units" },
+        { name: "🔧 高级：自定义端点", value: "advanced" },
+      ]}]);
+
+      if (mode === "units") {
+        // 组合采集：多选内容单元
+        const unitChoices = XHS_CONTENT_UNITS.map((u: any) => ({
+          name: `${u.label} — ${u.description}`, value: u.id, checked: false,
+        }));
+        const { selectedUnits } = await inq.prompt([{
+          type: "checkbox", name: "selectedUnits", message: "选择要采集的内容（空格切换选中，回车确认）：",
+          choices: unitChoices,
+        }]);
+        if (selectedUnits.length === 0) { console.log("⚠️ 未选择任何内容单元"); return; }
+
+        // 收集所需的参数
+        const neededParams = new Set<string>();
+        selectedUnits.forEach((u: string) => {
+          const def = XHS_CONTENT_UNITS.find((d: any) => d.id === u);
+          def?.requiredParams.forEach((p: string) => neededParams.add(p));
+        });
+        const userParams: Record<string, string> = {};
+        for (const p of neededParams) {
+          const { val } = await inq.prompt([{ type: "input", name: "val", message: `请输入 ${p}：` }]);
+          userParams[p] = val;
+        }
+
+        // 执行组合采集
+        console.log(`\n⏳ 正在组合采集 ${selectedUnits.length} 个内容单元...\n`);
+        const results = await (crawler as any).collectUnits(selectedUnits, userParams, session);
+
+        // 输出结果
+        const outDir = path.resolve("output", crawler.name);
+        await fs.mkdir(outDir, { recursive: true });
+        const outFile = path.join(outDir, `combined-${Date.now()}.json`);
+        await fs.writeFile(outFile, JSON.stringify(results, null, 2), "utf-8");
+
+        results.forEach((r: any) => {
+          const def = XHS_CONTENT_UNITS.find((d: any) => d.id === r.unit);
+          const icon = r.status === "success" ? "✅" : r.status === "partial" ? "⚠️" : "❌";
+          console.log(`  ${icon} ${def?.label ?? r.unit}`);
+          console.log(`     方式: ${r.method} | 耗时: ${r.responseTime}ms`);
+          if (r.error) console.log(`     错误: ${r.error}`);
+          if (r.data && r.status !== "failed") {
+            const preview = typeof r.data === "string" ? r.data : JSON.stringify(r.data).slice(0, 200);
+            console.log(`     预览: ${preview}`);
+          }
+        });
+        console.log(`\n✅ 已保存: ${outFile}`);
+        return;
+      }
+
+      // 高级模式：显示原始端点列表
       const statusIcon = (s: string) => s === "verified" ? "✅" : s === "risk_ctrl" ? "⛔" : "🔶";
       const statusText = (s: string) => s === "verified" ? "" : s === "risk_ctrl" ? "(风控)" : "(签名待优化)";
       const sigChoices = XhsApiEndpoints.map((e: any) => ({
@@ -259,13 +314,13 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
         name: `🟠 ${e.name} (页面提取)`, value: `fb:${e.name}`,
       }));
       const choices = [
-        { name: "━━━ 签名直连（推荐）━━━", value: "__sep1__", disabled: true },
+        { name: "━━━ 签名直连 ━━━", value: "__sep1__", disabled: true },
         ...sigChoices,
         { name: "━━━ 兜底：页面 HTML 提取 ━━━", value: "__sep2__", disabled: true },
         ...fallbackChoices,
       ];
 
-      const { selected } = await inq.prompt([{ type: "list", name: "selected", message: "选择采集方式：", choices }]);
+      const { selected } = await inq.prompt([{ type: "list", name: "selected", message: "选择端点：", choices }]);
 
       if (selected.startsWith("sig:")) {
         // 签名直连

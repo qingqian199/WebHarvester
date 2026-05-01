@@ -4,6 +4,7 @@ import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { generateXsHeader } from "../../utils/crypto/xhs-signer";
 import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
+import { XhsContentUnit, UnitResult } from "../../core/models/ContentUnit";
 
 const XHS_DOMAIN = "xiaohongshu.com";
 const XHS_API_HOST = "edith.xiaohongshu.com";
@@ -279,6 +280,63 @@ export class XhsCrawler implements ISiteCrawler {
     } finally {
       await browser.close();
     }
+  }
+
+  /**
+   * 组合采集：一次收集多个内容单元。
+   * 自动编排每个单元的采集方式（签名直连 / 页面提取）。
+   */
+  async collectUnits(
+    units: XhsContentUnit[],
+    params: Record<string, string>,
+    session?: CrawlerSession,
+    authMode: "logged_in" | "guest" = "logged_in",
+  ): Promise<UnitResult[]> {
+    const results: UnitResult[] = [];
+
+    for (const unit of units) {
+      const start = Date.now();
+      try {
+        switch (unit) {
+          case "user_info": {
+            const r = await this.fetchApi("用户信息", {}, session, authMode);
+            results.push({ unit, status: "success", data: JSON.parse(r.body).data ?? {}, method: "signature", responseTime: r.responseTime });
+            break;
+          }
+          case "user_posts": {
+            const r = await this.fetchPageData("用户主页", { user_id: params.user_id || "" }, session);
+            const parsed = JSON.parse(r.body);
+            results.push({ unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          case "user_board": {
+            const r = await this.fetchApi("收藏列表", {}, session, authMode);
+            const d = JSON.parse(r.body);
+            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime, error: d.code !== 0 ? d.msg || "签名偏差" : undefined });
+            break;
+          }
+          case "note_detail": {
+            const nid = params.note_id || "";
+            const r = await this.fetchPageData("笔记详情", { note_id: nid }, session);
+            const parsed = JSON.parse(r.body);
+            results.push({ unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          case "search_notes": {
+            const kw = params.keyword || "";
+            const r = await this.fetchPageData("搜索笔记", { keyword: kw }, session);
+            const parsed = JSON.parse(r.body);
+            results.push({ unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          default:
+            results.push({ unit, status: "failed", data: null, method: "none", error: `未知单元: ${unit}`, responseTime: 0 });
+        }
+      } catch (e: any) {
+        results.push({ unit, status: "failed", data: null, method: "none", error: e.message, responseTime: Date.now() - start });
+      }
+    }
+    return results;
   }
 }
 
