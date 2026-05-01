@@ -1,5 +1,7 @@
 import fetch from "node-fetch";
 import { ISiteCrawler, CrawlerSession, PageData, FetchOptions } from "../../core/ports/ISiteCrawler";
+import { PlaywrightAdapter } from "../PlaywrightAdapter";
+import { ConsoleLogger } from "../ConsoleLogger";
 import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { buildSignedQuery } from "../../utils/crypto/bilibili-signer";
 
@@ -19,12 +21,22 @@ export interface BiliEndpointDef {
 const DEFAULT_IMG_KEY = "4932caff0ff746eab6f01bf08b70ac45";
 const DEFAULT_SUB_KEY = "4932caff0ff746eab6f01bf08b70ac45";
 
+export const BiliFallbackEndpoints: ReadonlyArray<{
+  name: string; pageUrl: string; dataPath: string;
+}> = [
+  { name: "B站搜索", pageUrl: "https://search.bilibili.com/all?keyword={keyword}", dataPath: "search.videos" },
+  { name: "用户视频列表", pageUrl: "https://space.bilibili.com/{mid}/video", dataPath: "user.videos" },
+  { name: "视频详情", pageUrl: "https://www.bilibili.com/video/{bvid}", dataPath: "video.detail" },
+];
+
 export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
-  { name: "视频信息", path: "/x/web-interface/wbi/view/detail", needWbi: true, params: "aid=116435892372604", status: "sig_pending" },
+  // ✅ 已验证（WBI 签名通过）
+  { name: "视频信息", path: "/x/web-interface/wbi/view/detail", needWbi: true, params: "aid=116435892372604", status: "verified" },
+
+  // 🔶 待验证
   { name: "弹幕数据", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid=37660265907&type=1&segment_index=1", status: "sig_pending" },
-  { name: "用户信息", path: "/x/space/wbi/acc/info", needWbi: true, params: "mid=316627722", status: "sig_pending" },
+  { name: "用户空间信息", path: "/x/space/wbi/acc/info", needWbi: true, params: "mid=316627722", status: "sig_pending" },
   { name: "热门搜索", path: "/x/web-interface/wbi/search/default", needWbi: true, params: "", status: "sig_pending" },
-  { name: "直播间信息", path: "/xlive/web-room/v1/index/getRoomBaseInfo", needWbi: false, params: "uids=316627722", status: "sig_pending" },
 ];
 
 /**
@@ -102,5 +114,38 @@ export class BilibiliCrawler implements ISiteCrawler {
 
     const url = `https://${BILI_API_HOST}${ep.path}?${query}`;
     return this.fetch(url, session);
+  }
+
+  async fetchPageData(pageType: string, params: Record<string, string>, session?: CrawlerSession): Promise<PageData> {
+    const fb = BiliFallbackEndpoints.find((e) => e.name === pageType);
+    if (!fb) throw new Error(`未知兜底端点: ${pageType}`);
+    const url = fb.pageUrl.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(params[k] || ""));
+
+    const logger = new ConsoleLogger("info");
+    const browser = new PlaywrightAdapter(logger);
+    try {
+      const startTime = Date.now();
+      await browser.launch(url, session ? {
+        cookies: session.cookies.map((c) => ({
+          name: c.name, value: c.value, domain: c.domain ?? ".bilibili.com",
+          path: "/", httpOnly: false, secure: false, sameSite: "Lax" as const,
+        })),
+        localStorage: {}, sessionStorage: {}, createdAt: Date.now(), lastUsedAt: Date.now(),
+      } : undefined);
+      await new Promise((r) => setTimeout(r, 3000));
+      const title = await browser.executeScript<string>("document.title").catch(() => "");
+      const bodyText = await browser.executeScript<string>(
+        "document.body.innerText.slice(0, 5000)",
+      ).catch(() => "");
+      return {
+        url, statusCode: 200,
+        body: JSON.stringify({ title, content: bodyText }),
+        headers: { "content-type": "application/json;charset=utf-8" },
+        responseTime: Date.now() - startTime,
+        capturedAt: new Date().toISOString(),
+      };
+    } finally {
+      await browser.close();
+    }
   }
 }
