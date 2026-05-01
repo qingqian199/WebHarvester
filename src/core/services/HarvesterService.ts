@@ -14,6 +14,7 @@ import { StrategyOrchestrator } from "./StrategyOrchestrator";
 import { ILightHttpEngine } from "../ports/ILightHttpEngine";
 import { CrawlerDispatcher } from "./CrawlerDispatcher";
 import { CrawlerSession } from "../ports/ISiteCrawler";
+import { DataClassifier } from "./DataClassifier";
 
 /** 采集服务——核心编排器。协调浏览器自动化、数据提取、规则分析和结果存储。 */
 export class HarvesterService {
@@ -103,6 +104,7 @@ export class HarvesterService {
       analysis: { apiRequests: [], hiddenFields: [], authInfo: { localStorage: {}, sessionStorage: {} } },
     };
     await this.storage.save(result, outputFormat);
+    this.logClassification(result);
     this.logger.info("特化爬虫采集完成", { cost: responseTime, status: statusCode });
     return result;
   }
@@ -133,6 +135,7 @@ export class HarvesterService {
     };
 
     await this.storage.save(result, outputFormat);
+    this.logClassification(result);
     this.logger.info("HTTP 采集完成", { cost: responseTime, status: statusCode });
     return result;
   }
@@ -184,6 +187,7 @@ export class HarvesterService {
     };
 
     await this.storage.save(result, outputFormat);
+    this.logClassification(result);
 
     if (needSaveSession && sessionManager && sessionProfile) {
       const session: SessionState = {
@@ -196,5 +200,16 @@ export class HarvesterService {
 
     this.logger.info("采集任务完成", { cost: end - start, apiCount: apiRequests.length });
     return result;
+  }
+
+  private logClassification(result: HarvestResult): void {
+    const classifier = new DataClassifier();
+    const classified = classifier.classify(result);
+    this.logger.info("📊 数据分类完成", {
+      coreApiCount: classified.core.apiEndpoints.length,
+      authTokens: Object.keys(classified.core.authTokens).length,
+      antiCrawl: classified.core.antiCrawlDefenses.length,
+      secondaryRequests: classified.secondary.allCapturedRequests.length,
+    });
   }
 }
