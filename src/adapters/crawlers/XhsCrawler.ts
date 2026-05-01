@@ -7,35 +7,47 @@ const XHS_DOMAIN = "xiaohongshu.com";
 const XHS_API_HOST = "edith.xiaohongshu.com";
 
 /**
- * 小红书 API 端点定义。
+ * 小红书 API 端点定义（签名直连 — 已验证可用）。
  *
  * name   — 用于 CLI/Web 显示的端点名。
  * path   — API 路径。
- * params — 默认查询参数（可覆盖）。
- * status — 可用性状态：
- *   "verified"    — 签名 + 参数全部验证通过，返回 code=0/1000
- *   "param_pending" — 签名通过（返回 JSON），但参数格式待确认
- *   "risk_ctrl"   — 签名通过，但触发账号风控
+ * params — 默认查询参数。
  */
 export const XhsApiEndpoints: ReadonlyArray<{
   name: string;
   path: string;
   defaultParams: string;
-  status: "verified" | "param_pending" | "risk_ctrl";
 }> = [
-  // ── 已验证可用 ──
-  { name: "用户信息（当前）", path: "/api/sns/web/v2/user/me", defaultParams: "", status: "verified" },
-  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E", status: "verified" },
+  { name: "用户信息（当前）", path: "/api/sns/web/v2/user/me", defaultParams: "" },
+  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E" },
+] as const;
 
-  // ── 采集结果已确认参数名（user_id/num/page），但仍返回 -1 ──
-  //   原因：Harvest 中该请求由真实前端签名（code=200），而 XhsCrawler 签名
-  //   生成算法与前端不完全一致。参数名正确，需优化签名算法而非参数。
-  { name: "收藏列表（已知参数）", path: "/api/sns/web/v1/board/user", defaultParams: "user_id=PLACEHOLDER&num=5&page=1", status: "param_pending" },
-  { name: "用户帖子列表（已知参数）", path: "/api/sns/web/v1/user_posted", defaultParams: "user_id=PLACEHOLDER&num=5", status: "param_pending" },
-  { name: "其他用户信息（已知参数）", path: "/api/sns/web/v1/user/otherinfo", defaultParams: "target_user_id=PLACEHOLDER", status: "param_pending" },
-
-  // ── 签名有效但触发风控 ──
-  { name: "搜索笔记", path: "/api/sns/web/v1/search/notes", defaultParams: "", status: "risk_ctrl" },
+/**
+ * 兜底方案端点（通过浏览器引擎提取，不走特化签名）。
+ * 签名算法无法通过时，通过 Page.evaluate 从 HTML 的 __INITIAL_STATE__ 提取数据。
+ */
+export const XhsFallbackEndpoints: ReadonlyArray<{
+  name: string;
+  /** 需要打开的页面 URL 模板。用 {} 表示参数占位。 */
+  pageUrl: string;
+  /** 页面加载后用于提取数据的 JS 表达式。 */
+  extractScript: string;
+}> = [
+  {
+    name: "搜索笔记",
+    pageUrl: "https://www.xiaohongshu.com/search_result?keyword={keyword}",
+    extractScript: "JSON.parse(document.querySelector('script:contains(\"__INITIAL_STATE__\")')?.textContent?.replace('window.__INITIAL_STATE__=','')?.split(';')[0] || '{}')",
+  },
+  {
+    name: "用户主页",
+    pageUrl: "https://www.xiaohongshu.com/user/profile/{user_id}",
+    extractScript: "JSON.parse(document.querySelector('script:contains(\"__INITIAL_STATE__\")')?.textContent?.replace('window.__INITIAL_STATE__=','')?.split(';')[0] || '{}')",
+  },
+  {
+    name: "笔记详情",
+    pageUrl: "https://www.xiaohongshu.com/discovery/item/{note_id}",
+    extractScript: "JSON.parse(document.querySelector('script:contains(\"__INITIAL_STATE__\")')?.textContent?.replace('window.__INITIAL_STATE__=','')?.split(';')[0] || '{}')",
+  },
 ] as const;
 
 /**
@@ -128,17 +140,8 @@ export class XhsCrawler implements ISiteCrawler {
   async fetchApi(endpointName: string, params?: string, session?: CrawlerSession): Promise<PageData> {
     const ep = XhsApiEndpoints.find((e) => e.name === endpointName);
     if (!ep) throw new Error(`未知端点: ${endpointName}`);
-
-    if (ep.status === "param_pending") {
-      console.warn(`⚠️ ${ep.name} — 参数名已确认，但签名算法需优化（返回 -1）`);
-    }
-    if (ep.status === "risk_ctrl") {
-      console.warn(`⚠️ ${ep.name} 可能触发风控（code 300011），请确保请求间隔`);
-    }
-
     const query = params ?? ep.defaultParams;
-    const cleanParams = query.replace(/PLACEHOLDER/g, "");
-    const url = `https://${XHS_API_HOST}${ep.path}${cleanParams ? "?" + cleanParams : ""}`;
+    const url = `https://${XHS_API_HOST}${ep.path}${query ? "?" + query : ""}`;
     return this.fetch(url, session);
   }
 }

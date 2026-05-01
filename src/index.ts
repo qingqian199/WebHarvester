@@ -17,7 +17,7 @@ import { AuthGuard } from "./utils/auth-guard";
 import { LoginOracle } from "./utils/login-oracle";
 import { ArticleCaptureService } from "./services/ArticleCaptureService";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
-import { XhsCrawler, XhsApiEndpoints } from "./adapters/crawlers/XhsCrawler";
+import { XhsCrawler, XhsApiEndpoints, XhsFallbackEndpoints } from "./adapters/crawlers/XhsCrawler";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
 import { captureSessionFromPage } from "./utils/session-helper";
 import { SessionState } from "./core/ports/ISessionManager";
@@ -242,34 +242,78 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
   }
 
   try {
-    // 如果是小红书，让用户选择 API 端点
+    // 如果是小红书，显示端点菜单
     if (crawler.name === "xiaohongshu") {
       const { default: inq } = await import("inquirer");
-      const endpoints = XhsApiEndpoints.map((e: any) => ({ name: `${e.name} (${e.path})`, value: e.name }));
-      const { epName } = await inq.prompt([{ type: "list", name: "epName", message: "选择 API 端点：", choices: endpoints }]);
-      const ep = XhsApiEndpoints.find((e: any) => e.name === epName);
-      let params = ep?.defaultParams ?? "";
-      if (ep?.defaultParams) {
-        const { p } = await inq.prompt([{ type: "input", name: "p", message: "查询参数（留空使用默认）：", default: ep.defaultParams }]);
-        params = p;
-      }
-      const xhs = crawler as any;
-      const result = await xhs.fetchApi(epName, params, session);
-      const outDir = path.resolve("output", crawler.name);
-      await fs.mkdir(outDir, { recursive: true });
-      const outFile = path.join(outDir, `${crawler.name}-${epName}-${Date.now()}.json`);
-      await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
-      console.log(`\n✅ ${crawler.name} - ${epName} 采集完成`);
-      console.log(`   状态码: ${result.statusCode}`);
-      console.log(`   耗时: ${result.responseTime}ms`);
-      console.log(`   正文长度: ${result.body.length} 字符`);
-      console.log(`   已保存: ${outFile}`);
-      if (result.headers["content-type"]?.includes("json")) {
-        const body = JSON.parse(result.body);
-        console.log(`   响应: code=${body.code} ${body.msg || ""}`);
-        if (body.code === 0 || body.code === 1000) {
-          console.log(`   数据预览: ${JSON.stringify(body.data).slice(0, 300)}`);
+
+      // 构建菜单：签名直连 + 兜底方案
+      const sigChoices = XhsApiEndpoints.map((e: any) => ({
+        name: `🔵 ${e.name} (签名直连)`, value: `sig:${e.name}`,
+      }));
+      const fallbackChoices = XhsFallbackEndpoints.map((e: any) => ({
+        name: `🟠 ${e.name} (页面提取)`, value: `fb:${e.name}`,
+      }));
+      const choices = [
+        { name: "━━━ 签名直连（推荐）━━━", value: "__sep1__", disabled: true },
+        ...sigChoices,
+        { name: "━━━ 兜底：页面 HTML 提取 ━━━", value: "__sep2__", disabled: true },
+        ...fallbackChoices,
+      ];
+
+      const { selected } = await inq.prompt([{ type: "list", name: "selected", message: "选择采集方式：", choices }]);
+
+      if (selected.startsWith("sig:")) {
+        // 签名直连
+        const epName = selected.slice(4);
+        const ep = XhsApiEndpoints.find((e: any) => e.name === epName);
+        let params = ep?.defaultParams ?? "";
+        if (ep?.defaultParams) {
+          const { p } = await inq.prompt([{ type: "input", name: "p", message: "查询参数（留空默认）：", default: ep.defaultParams }]);
+          params = p;
         }
+        const result = await (crawler as any).fetchApi(epName, params, session);
+        const outDir = path.resolve("output", crawler.name);
+        await fs.mkdir(outDir, { recursive: true });
+        const outFile = path.join(outDir, `${crawler.name}-${epName}-${Date.now()}.json`);
+        await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
+        console.log(`\n✅ ${crawler.name} - ${epName} (签名直连)`);
+        console.log(`   耗时: ${result.responseTime}ms`);
+        console.log(`   已保存: ${outFile}`);
+        if (result.headers["content-type"]?.includes("json")) {
+          const body = JSON.parse(result.body);
+          console.log(`   响应: code=${body.code} ${body.msg || ""}`);
+          if (body.code === 0 || body.code === 1000) {
+            console.log(`   数据预览: ${JSON.stringify(body.data).slice(0, 300)}`);
+          }
+        }
+      } else if (selected.startsWith("fb:")) {
+        // 页面提取（浏览器引擎）
+        const fbName = selected.slice(3);
+        const fb = XhsFallbackEndpoints.find((e: any) => e.name === fbName);
+        if (!fb) { console.log("❌ 未知兜底端点"); return; }
+        const { params: userParams } = await inq.prompt([{ type: "input", name: "params", message: "请输入 URL 参数（如 keyword=原神）：" }]);
+        const url = fb.pageUrl.replace(/\{(\w+)\}/g, (_: string, k: string) => {
+          const m = userParams.match(new RegExp(`${k}=([^&]+)`));
+          return m ? encodeURIComponent(decodeURIComponent(m[1])) : k;
+        });
+        console.log(`\n⏳ 正在通过浏览器打开: ${url}`);
+        const PlaywrightAdapter = (await import("./adapters/PlaywrightAdapter")).PlaywrightAdapter;
+        const br = new PlaywrightAdapter(logger);
+        await br.launch(url, session ? {
+          cookies: session.cookies.map(c => ({ name: c.name, value: c.value, domain: c.domain ?? ".xiaohongshu.com", path: "/", httpOnly: false, secure: false, sameSite: "Lax" as const })),
+          localStorage: session.localStorage ?? {},
+          sessionStorage: {}, createdAt: Date.now(), lastUsedAt: Date.now(),
+        } : undefined);
+        const extracted = await br.executeScript<string>(fb.extractScript).catch(() => "{}");
+        await br.close();
+        const outDir = path.resolve("output", crawler.name);
+        await fs.mkdir(outDir, { recursive: true });
+        const outFile = path.join(outDir, `${crawler.name}-${fbName}-${Date.now()}.json`);
+        const result = { url, source: "html-extract", endpoint: fbName, data: extracted, capturedAt: new Date().toISOString() };
+        await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
+        console.log(`\n✅ ${crawler.name} - ${fbName} (页面提取)`);
+        console.log(`   已保存: ${outFile}`);
+        console.log(`   数据预览: ${extracted.slice(0, 500)}`);
       }
       return;
     }
