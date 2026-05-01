@@ -116,7 +116,7 @@ export class BrowserLifecycleManager {
     url: string,
     headless = true,
     sessionState?: SessionState,
-    waitUntil: "networkidle" | "domcontentloaded" | "load" = "networkidle",
+    waitUntil: "networkidle" | "domcontentloaded" | "load" = "domcontentloaded",
     timeout?: number,
   ): Promise<Page> {
     this.capturedRequests.clear();

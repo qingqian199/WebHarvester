@@ -15,7 +15,7 @@ export class PlaywrightAdapter implements IBrowserAdapter {
   }
 
   async launch(url: string, sessionState?: SessionState): Promise<void> {
-    await this.lcm.launch(url, true, sessionState, "networkidle");
+    await this.lcm.launch(url, true, sessionState);
   }
 
   async performActions(actions: HarvestConfig["actions"]): Promise<void> {
