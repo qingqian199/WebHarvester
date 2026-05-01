@@ -4,6 +4,7 @@ import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { generateZse96, generateApiVersion } from "../../utils/crypto/zhihu-signer";
 import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
+import { UnitResult } from "../../core/models/ContentUnit";
 
 export const ZhihuFallbackEndpoints: ReadonlyArray<{
   name: string; pageUrl: string; dataPath: string;
@@ -160,5 +161,44 @@ export class ZhihuCrawler implements ISiteCrawler {
 
   private fillParams(tpl: string, params: Record<string, string>): string {
     return tpl.replace(/\{(\w+)\}/g, (_, k) => params[k] || k);
+  }
+
+  async collectUnits(units: string[], params: Record<string, string>, session?: CrawlerSession): Promise<UnitResult[]> {
+    const results: UnitResult[] = [];
+    for (const unit of units) {
+      const start = Date.now();
+      try {
+        switch (unit) {
+          case "zhihu_user_info": {
+            const r = await this.fetchApi("当前用户", {}, session);
+            results.push({ unit, status: "success", data: JSON.parse(r.body), method: "signature", responseTime: r.responseTime });
+            break;
+          }
+          case "zhihu_search": {
+            const r = await this.fetchPageData("search", { keyword: params.keyword || "" }, session);
+            const parsed = JSON.parse(r.body);
+            results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          case "zhihu_article": {
+            const r = await this.fetchPageData("article", { article_id: params.article_id || "" }, session);
+            const parsed = JSON.parse(r.body);
+            results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          case "zhihu_hot_search": {
+            const r = await this.fetchApi("热门搜索", {}, session);
+            const d = JSON.parse(r.body);
+            results.push({ unit, status: d.code === 0 || r.statusCode === 200 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime });
+            break;
+          }
+          default:
+            results.push({ unit, status: "failed", data: null, method: "none", error: "未知单元", responseTime: 0 });
+        }
+      } catch (e: any) {
+        results.push({ unit, status: "failed", data: null, method: "none", error: e.message, responseTime: Date.now() - start });
+      }
+    }
+    return results;
   }
 }

@@ -18,7 +18,7 @@ import { LoginOracle } from "./utils/login-oracle";
 import { ArticleCaptureService } from "./services/ArticleCaptureService";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
 import { XhsCrawler, XhsApiEndpoints, XhsFallbackEndpoints } from "./adapters/crawlers/XhsCrawler";
-import { XHS_CONTENT_UNITS } from "./core/models/ContentUnit";
+import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS } from "./core/models/ContentUnit";
 import { ZhihuCrawler } from "./adapters/crawlers/ZhihuCrawler";
 import { BilibiliCrawler } from "./adapters/crawlers/BilibiliCrawler";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
@@ -245,19 +245,21 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
   }
 
   try {
-    // 如果是小红书，显示内容单元菜单
-    if (crawler.name === "xiaohongshu") {
+    // 组合采集：小红书/知乎/B站
+    const contentUnits = (crawler.name === "xiaohongshu") ? XHS_CONTENT_UNITS
+      : (crawler.name === "zhihu") ? ZHIHU_CONTENT_UNITS
+      : (crawler.name === "bilibili") ? BILI_CONTENT_UNITS : null;
+
+    if (contentUnits && contentUnits.length > 0) {
       const { default: inq } = await import("inquirer");
 
-      // 先选择采集模式：组合采集 / 高级
       const { mode } = await inq.prompt([{ type: "list", name: "mode", message: "选择采集模式：", choices: [
         { name: "📦 组合采集（推荐）", value: "units" },
         { name: "🔧 高级：自定义端点", value: "advanced" },
       ]}]);
 
       if (mode === "units") {
-        // 组合采集：多选内容单元
-        const unitChoices = XHS_CONTENT_UNITS.map((u: any) => ({
+        const unitChoices = contentUnits.map((u: any) => ({
           name: `${u.label} — ${u.description}`, value: u.id, checked: false,
         }));
         const { selectedUnits } = await inq.prompt([{
@@ -266,10 +268,9 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
         }]);
         if (selectedUnits.length === 0) { console.log("⚠️ 未选择任何内容单元"); return; }
 
-        // 收集所需的参数
         const neededParams = new Set<string>();
         selectedUnits.forEach((u: string) => {
-          const def = XHS_CONTENT_UNITS.find((d: any) => d.id === u);
+          const def = contentUnits.find((d: any) => d.id === u);
           def?.requiredParams.forEach((p: string) => neededParams.add(p));
         });
         const userParams: Record<string, string> = {};
@@ -278,18 +279,16 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
           userParams[p] = val;
         }
 
-        // 执行组合采集
         console.log(`\n⏳ 正在组合采集 ${selectedUnits.length} 个内容单元...\n`);
         const results = await (crawler as any).collectUnits(selectedUnits, userParams, session);
 
-        // 输出结果
         const outDir = path.resolve("output", crawler.name);
         await fs.mkdir(outDir, { recursive: true });
         const outFile = path.join(outDir, `combined-${Date.now()}.json`);
         await fs.writeFile(outFile, JSON.stringify(results, null, 2), "utf-8");
 
         results.forEach((r: any) => {
-          const def = XHS_CONTENT_UNITS.find((d: any) => d.id === r.unit);
+          const def = contentUnits.find((d: any) => d.id === r.unit);
           const icon = r.status === "success" ? "✅" : r.status === "partial" ? "⚠️" : "❌";
           console.log(`  ${icon} ${def?.label ?? r.unit}`);
           console.log(`     方式: ${r.method} | 耗时: ${r.responseTime}ms`);
@@ -303,7 +302,7 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
         return;
       }
 
-      // 高级模式：显示原始端点列表
+      // 高级模式
       const statusIcon = (s: string) => s === "verified" ? "✅" : s === "risk_ctrl" ? "⛔" : "🔶";
       const statusText = (s: string) => s === "verified" ? "" : s === "risk_ctrl" ? "(风控)" : "(签名待优化)";
       const sigChoices = XhsApiEndpoints.map((e: any) => ({

@@ -4,6 +4,7 @@ import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
 import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { buildSignedQuery } from "../../utils/crypto/bilibili-signer";
+import { UnitResult } from "../../core/models/ContentUnit";
 
 const BILI_DOMAIN = "bilibili.com";
 const BILI_API_HOST = "api.bilibili.com";
@@ -147,5 +148,39 @@ export class BilibiliCrawler implements ISiteCrawler {
     } finally {
       await browser.close();
     }
+  }
+
+  async collectUnits(units: string[], params: Record<string, string>, session?: CrawlerSession): Promise<UnitResult[]> {
+    const results: UnitResult[] = [];
+    for (const unit of units) {
+      const start = Date.now();
+      try {
+        switch (unit) {
+          case "bili_video_info": {
+            const r = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
+            const d = JSON.parse(r.body);
+            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime });
+            break;
+          }
+          case "bili_search": {
+            const r = await this.fetchPageData("B站搜索", { keyword: params.keyword || "" }, session);
+            const parsed = JSON.parse(r.body);
+            results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          case "bili_user_videos": {
+            const r = await this.fetchPageData("用户视频列表", { mid: params.mid || "" }, session);
+            const parsed = JSON.parse(r.body);
+            results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            break;
+          }
+          default:
+            results.push({ unit, status: "failed", data: null, method: "none", error: "未知单元", responseTime: 0 });
+        }
+      } catch (e: any) {
+        results.push({ unit, status: "failed", data: null, method: "none", error: e.message, responseTime: Date.now() - start });
+      }
+    }
+    return results;
   }
 }
