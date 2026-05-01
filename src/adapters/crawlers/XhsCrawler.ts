@@ -7,6 +7,15 @@ const XHS_DOMAIN = "xiaohongshu.com";
 const XHS_API_HOST = "edith.xiaohongshu.com";
 
 /**
+ * 小红书 API 端点定义。
+ * name 用于 CLI/Web 显示；path 为 API 路径；params 为可选默认参数。
+ */
+export const XhsApiEndpoints = [
+  { name: "用户信息（当前）", path: "/api/sns/web/v2/user/me", defaultParams: "" },
+  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E" },
+] as const;
+
+/**
  * 小红书（xiaohongshu.com）特化爬虫。
  *
  * API 请求使用 Phase 2 完整签名（XXTEA + MD5 + 自定义 Base64），
@@ -85,6 +94,20 @@ export class XhsCrawler implements ISiteCrawler {
       responseTime,
       capturedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * 通过端点名称和参数执行 API 请求。
+   * @param endpointName XhsApiEndpoints 中的 name。
+   * @param params 查询参数字符串（如 "keyword=test"），不传则使用默认参数。
+   * @param session 可选登录态。
+   */
+  async fetchApi(endpointName: string, params?: string, session?: CrawlerSession): Promise<PageData> {
+    const ep = XhsApiEndpoints.find((e) => e.name === endpointName);
+    if (!ep) throw new Error(`未知端点: ${endpointName}`);
+    const query = params ?? ep.defaultParams;
+    const url = `https://${XHS_API_HOST}${ep.path}${query ? "?" + query : ""}`;
+    return this.fetch(url, session);
   }
 }
 

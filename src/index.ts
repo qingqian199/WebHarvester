@@ -17,7 +17,7 @@ import { AuthGuard } from "./utils/auth-guard";
 import { LoginOracle } from "./utils/login-oracle";
 import { ArticleCaptureService } from "./services/ArticleCaptureService";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
-import { XhsCrawler } from "./adapters/crawlers/XhsCrawler";
+import { XhsCrawler, XhsApiEndpoints } from "./adapters/crawlers/XhsCrawler";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
 import { captureSessionFromPage } from "./utils/session-helper";
 import { SessionState } from "./core/ports/ISessionManager";
@@ -242,6 +242,39 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
   }
 
   try {
+    // 如果是小红书，让用户选择 API 端点
+    if (crawler.name === "xiaohongshu") {
+      const { default: inq } = await import("inquirer");
+      const endpoints = XhsApiEndpoints.map((e: any) => ({ name: `${e.name} (${e.path})`, value: e.name }));
+      const { epName } = await inq.prompt([{ type: "list", name: "epName", message: "选择 API 端点：", choices: endpoints }]);
+      const ep = XhsApiEndpoints.find((e: any) => e.name === epName);
+      let params = ep?.defaultParams ?? "";
+      if (ep?.defaultParams) {
+        const { p } = await inq.prompt([{ type: "input", name: "p", message: "查询参数（留空使用默认）：", default: ep.defaultParams }]);
+        params = p;
+      }
+      const xhs = crawler as any;
+      const result = await xhs.fetchApi(epName, params, session);
+      const outDir = path.resolve("output", crawler.name);
+      await fs.mkdir(outDir, { recursive: true });
+      const outFile = path.join(outDir, `${crawler.name}-${epName}-${Date.now()}.json`);
+      await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
+      console.log(`\n✅ ${crawler.name} - ${epName} 采集完成`);
+      console.log(`   状态码: ${result.statusCode}`);
+      console.log(`   耗时: ${result.responseTime}ms`);
+      console.log(`   正文长度: ${result.body.length} 字符`);
+      console.log(`   已保存: ${outFile}`);
+      if (result.headers["content-type"]?.includes("json")) {
+        const body = JSON.parse(result.body);
+        console.log(`   响应: code=${body.code} ${body.msg || ""}`);
+        if (body.code === 0 || body.code === 1000) {
+          console.log(`   数据预览: ${JSON.stringify(body.data).slice(0, 300)}`);
+        }
+      }
+      return;
+    }
+
+    // 通用特化爬虫（无端点选择）
     const result = await crawler.fetch(action.url, session);
     console.log(`\n✅ ${crawler.name} 采集完成`);
     console.log(`   状态码: ${result.statusCode}`);
