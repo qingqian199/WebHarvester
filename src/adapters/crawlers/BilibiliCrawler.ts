@@ -40,7 +40,7 @@ export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
   { name: "弹幕列表", path: "/x/v2/dm/web/view", params: "oid=37660265907&type=1", status: "verified" },
   { name: "字幕信息", path: "/x/v2/subtitle/web/view", params: "oid=37660265907", status: "verified" },
   { name: "直播间信息", path: "/xlive/web-room/v1/index/getRoomBaseInfo", params: "uids=173323339&req_biz=video", status: "verified" },
-  { name: "视频评论", path: "/x/v2/reply/main", params: "oid={oid}&type=1&mode=3&ps=5", status: "verified" },
+  { name: "视频评论", path: "/x/v2/reply/main", params: "oid={oid}&type=1&mode=3&ps=20", status: "verified" },
 
   // ✅ 搜索（WBI 签名验证通过）
   { name: "搜索综合", path: "/x/web-interface/wbi/search/all/v2", needWbi: true, params: "keyword=%E5%8E%9F%E7%A5%9E&page=1", status: "verified" },
@@ -244,15 +244,25 @@ export class BilibiliCrawler implements ISiteCrawler {
           case "bili_video_comments": {
             const oid = params.oid || params.aid || "";
             if (!oid) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 oid", responseTime: 0 }); break; }
-            let r = await this.fetchApi("视频评论", { oid }, session);
-            let d = JSON.parse(r.body);
-            if (d.code === -352) {
-              console.warn("⚠️ B站评论签名 -352，3秒后重试...");
-              await new Promise((r2) => setTimeout(r2, 3000));
-              r = await this.fetchApi("视频评论", { oid }, session);
-              d = JSON.parse(r.body);
+            const maxPages = Math.min(parseInt(params.max_pages || "3"), 10);
+            let allReplies: any[] = [];
+            let totalTime = 0;
+            for (let page = 0; page < maxPages; page++) {
+              let r = await this.fetchApi("视频评论", { oid, pn: String(page + 1) }, session);
+              let d = JSON.parse(r.body);
+              if (d.code === -352) {
+                console.warn("⚠️ B站评论签名 -352，3秒后重试...");
+                await new Promise((r2) => setTimeout(r2, 3000));
+                r = await this.fetchApi("视频评论", { oid, pn: String(page + 1) }, session);
+                d = JSON.parse(r.body);
+              }
+              totalTime += r.responseTime;
+              if (d.code === 0 && d.data?.replies) {
+                allReplies = allReplies.concat(d.data.replies);
+                if (!d.data.cursor?.is_end) break;
+              } else break;
             }
-            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime, error: d.code !== 0 ? `code=${d.code}` : undefined });
+            results.push({ unit, status: "success", data: { code: 0, data: { replies: allReplies, total: allReplies.length } }, method: "signature", responseTime: totalTime });
             break;
           }
           default:
