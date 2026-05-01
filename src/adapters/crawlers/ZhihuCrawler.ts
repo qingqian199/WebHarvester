@@ -171,7 +171,7 @@ export class ZhihuCrawler implements ISiteCrawler {
     return tpl.replace(/\{(\w+)\}/g, (_, k) => params[k] || k);
   }
 
-  async collectUnits(units: string[], params: Record<string, string>, session?: CrawlerSession): Promise<UnitResult[]> {
+  async collectUnits(units: string[], params: Record<string, string>, session?: CrawlerSession, _authMode?: string): Promise<UnitResult[]> {
     const results: UnitResult[] = [];
     for (const unit of units) {
       const start = Date.now();

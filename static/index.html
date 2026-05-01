@@ -9,10 +9,10 @@
 <body>
   <h1>🌐 WebHarvester 可视化面板</h1>
   <div class="tabs" id="tabNav">
-    <button class="tab active" onclick="switchTab('tab-collect')">采集任务</button>
-    <button class="tab" onclick="switchTab('tab-sessions')">会话管理</button>
-    <button class="tab" onclick="switchTab('tab-analyze')">结果分析</button>
-    <button class="tab" onclick="switchTab('tab-health')">服务状态</button>
+    <button class="tab active" onclick="switchTab('tab-collect', this)">采集任务</button>
+    <button class="tab" onclick="switchTab('tab-sessions', this)">会话管理</button>
+    <button class="tab" onclick="switchTab('tab-analyze', this)">结果分析</button>
+    <button class="tab" onclick="switchTab('tab-health', this)">服务状态</button>
   </div>
 
   <!-- Tab 1: 采集任务 -->

@@ -218,7 +218,7 @@ export class WebServer {
 
   private async handleApiCollectUnits(req: http.IncomingMessage, res: http.ServerResponse) {
     const body = JSON.parse(await this.getBody(req));
-    const { site, units, params: userParams, sessionName } = body;
+    const { site, units, params: userParams, sessionName, authMode } = body;
     if (!site || !units?.length) {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: -1, msg: "缺少 site 或 units" }));
@@ -243,7 +243,7 @@ export class WebServer {
     }
 
     try {
-      const results = await crawler.collectUnits(units, userParams || {}, session);
+      const results = await crawler.collectUnits(units, userParams || {}, session, authMode);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: 0, data: results }));
     } catch (e: any) {

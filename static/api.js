@@ -4,10 +4,10 @@ function log(text) {
   box.scrollTop = box.scrollHeight;
 }
 
-function switchTab(tabId) {
+function switchTab(tabId, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  event.target.classList.add('active');
+  el.classList.add('active');
   document.getElementById(tabId).classList.add('active');
 }
 
