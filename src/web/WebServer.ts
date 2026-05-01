@@ -15,6 +15,10 @@ import { ResultAnalyzer } from "../utils/analyzer";
 import { loadBatchTasks } from "../utils/batch-loader";
 import { HarvestResult } from "../core/models";
 import { ArticleCaptureService } from "../services/ArticleCaptureService";
+import { XhsCrawler } from "../adapters/crawlers/XhsCrawler";
+import { ZhihuCrawler } from "../adapters/crawlers/ZhihuCrawler";
+import { BilibiliCrawler } from "../adapters/crawlers/BilibiliCrawler";
+import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS } from "../core/models/ContentUnit";
 
 export class WebServer {
   private server: http.Server | null = null;
@@ -62,6 +66,10 @@ export class WebServer {
           await this.handleApiQuickArticle(req, res);
         } else if (req.url === "/api/crawlers" && req.method === "GET") {
           await this.handleApiCrawlers(res);
+        } else if (req.url === "/api/content-units" && req.method === "GET") {
+          await this.handleApiContentUnits(req, res);
+        } else if (req.url === "/api/collect-units" && req.method === "POST") {
+          await this.handleApiCollectUnits(req, res);
         } else if (req.url === "/api/sessions" && req.method === "GET") {
           await this.handleApiSessions(req, res);
         } else if (req.url?.startsWith("/api/sessions/") && req.method === "DELETE") {
@@ -194,6 +202,54 @@ export class WebServer {
     const appCfg = await loadAppConfig();
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ code: 0, data: appCfg.crawlers ?? {} }));
+  }
+
+  private async handleApiContentUnits(req: http.IncomingMessage, res: http.ServerResponse) {
+    const site = new URL(req.url!, `http://${req.headers.host}`).searchParams.get("site") || "";
+    const map: Record<string, typeof XHS_CONTENT_UNITS> = {
+      xiaohongshu: XHS_CONTENT_UNITS,
+      zhihu: ZHIHU_CONTENT_UNITS,
+      bilibili: BILI_CONTENT_UNITS,
+    };
+    const units = map[site] ?? [];
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data: units }));
+  }
+
+  private async handleApiCollectUnits(req: http.IncomingMessage, res: http.ServerResponse) {
+    const body = JSON.parse(await this.getBody(req));
+    const { site, units, params: userParams, sessionName } = body;
+    if (!site || !units?.length) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ code: -1, msg: "缺少 site 或 units" }));
+      return;
+    }
+
+    let session: any = undefined;
+    if (sessionName) {
+      const state = await this.sessionManager.load(sessionName);
+      if (state) session = { cookies: state.cookies, localStorage: state.localStorage };
+    }
+
+    const crawlerMap: Record<string, any> = {
+      xiaohongshu: new XhsCrawler(),
+      zhihu: new ZhihuCrawler(),
+      bilibili: new BilibiliCrawler(),
+    };
+    const crawler = crawlerMap[site];
+    if (!crawler) {
+      res.writeHead(400); res.end(JSON.stringify({ code: -1, msg: `未知站点: ${site}` }));
+      return;
+    }
+
+    try {
+      const results = await crawler.collectUnits(units, userParams || {}, session);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ code: 0, data: results }));
+    } catch (e: any) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ code: -1, msg: e.message }));
+    }
   }
 
   private async handleApiSessions(req: http.IncomingMessage, res: http.ServerResponse) {

@@ -13,15 +13,11 @@ function switchTab(tabId) {
 
 window.onload = async () => {
     await refreshProfileSelect();
-    await loadCrawlers();
     await fetchHealth();
     await loadSessionCards();
     await loadResultFiles();
+    await onSiteChange();
     setInterval(fetchHealth, 10000);
-    document.getElementById('collectMode').onchange = () => {
-    document.getElementById('crawlerSelectRow').style.display =
-      document.getElementById('collectMode').value === 'crawler' ? 'flex' : 'none';
-  };
 };
 
 // ── 通用 ──
@@ -53,30 +49,81 @@ async function loadCrawlers() {
   } catch {}
 }
 
-async function startCollect() {
-  const mode = document.getElementById('collectMode').value;
-  const url = document.getElementById('urlInput').value.trim();
-  if (!url) return alert('请输入网址');
-  const profile = document.getElementById('profileSelect').value;
+async function onSiteChange() {
+  const site = document.getElementById('collectSite').value;
+  const units = await api('/api/content-units?site=' + site);
+  const container = document.getElementById('unitCheckboxes');
+  if (!units.data || units.data.length === 0) {
+    container.innerHTML = '<p style="color:#888;">该站点无可用内容单元</p>'; return;
+  }
+  container.innerHTML = units.data.map((u, i) =>
+    `<label class="card" style="cursor:pointer;display:flex;gap:8px;align-items:center;">
+      <input type="checkbox" value="${u.id}" checked="${i < 2}" onchange="onUnitChange()" />
+      <div><div style="font-weight:600;">${u.label}</div><div style="font-size:0.8rem;color:#94a3b8;">${u.description}</div></div>
+    </label>`
+  ).join('');
+  onUnitChange();
+}
 
-  log(`🔍 开始${mode === 'crawler' ? '特化' : '通用'}采集：${url}`);
+function onUnitChange() {
+  const checked = document.querySelectorAll('#unitCheckboxes input:checked');
+  const needed = new Set();
+  checked.forEach(cb => {
+    const card = cb.closest('.card');
+    // 简化：从所有单元中查找
+  });
+  // 动态显示参数输入
+  const paramDiv = document.getElementById('paramInputs');
+  paramDiv.innerHTML = `
+    <div class="form-row"><input id="paramKeyword" placeholder="keyword（搜索词）" style="flex:1;" /></div>
+    <div class="form-row"><input id="paramUserId" placeholder="user_id / member_id / mid" style="flex:1;" /></div>
+    <div class="form-row"><input id="paramNoteId" placeholder="note_id / article_id / aid / bvid" style="flex:1;" /></div>
+  `;
+}
+
+async function startUnitCollect() {
+  const site = document.getElementById('collectSite').value;
+  const profile = document.getElementById('profileSelect').value;
+  const authMode = document.getElementById('authModeSelect').value;
+
+  const checked = document.querySelectorAll('#unitCheckboxes input:checked');
+  const units = Array.from(checked).map(cb => cb.value);
+  if (units.length === 0) return alert('请至少勾选一个内容单元');
+
+  const params = {
+    keyword: document.getElementById('paramKeyword')?.value || '',
+    user_id: document.getElementById('paramUserId')?.value || '',
+    member_id: document.getElementById('paramUserId')?.value || '',
+    mid: document.getElementById('paramUserId')?.value || '',
+    note_id: document.getElementById('paramNoteId')?.value || '',
+    article_id: document.getElementById('paramNoteId')?.value || '',
+    aid: document.getElementById('paramNoteId')?.value || '',
+  };
+
+  const resultDiv = document.getElementById('collectResult');
+  resultDiv.innerHTML = '<p style="color:#888;">⏳ 采集中...</p>';
+  log(`📦 组合采集 ${site}: ${units.join(', ')}`);
+
   try {
-    if (mode === 'crawler') {
-      const site = document.getElementById('crawlerSelect').value;
-      const res = await api('/api/run', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, profile, crawlerSite: site })
-      });
-      log(res.code === 0 ? '✅ 特化采集完成' : '❌ ' + res.msg);
-    } else {
-      const res = await api('/api/run', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, profile })
-      });
-      log(res.code === 0 ? '✅ 采集完成，报告已输出至 output 目录' : '❌ ' + res.msg);
-    }
-    await loadResultFiles();
-  } catch { log('❌ 接口请求异常'); }
+    const res = await api('/api/collect-units', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site, units, params, sessionName: profile, authMode }),
+    });
+    if (res.code !== 0) { resultDiv.innerHTML = `<p style="color:red;">❌ ${res.msg}</p>`; return; }
+
+    resultDiv.innerHTML = (res.data || []).map(r => {
+      const icon = r.status === 'success' ? '✅' : r.status === 'partial' ? '⚠️' : '❌';
+      const methodIcon = r.method === 'signature' ? '🔵' : r.method === 'html_extract' ? '🟠' : '⚪';
+      const preview = r.data ? JSON.stringify(r.data).slice(0, 200) : '';
+      return `<details style="margin-top:8px;background:#0f172a;padding:10px;border-radius:6px;" ${r.status === 'success' ? 'open' : ''}>
+        <summary style="cursor:pointer;">${icon} ${r.unit} ${methodIcon} ${r.responseTime}ms</summary>
+        <div style="font-size:0.8rem;margin-top:6px;">${r.error ? '<div style="color:#ef4444;">' + r.error + '</div>' : ''}<pre style="white-space:pre-wrap;color:#94a3b8;">${preview}</pre></div>
+      </details>`;
+    }).join('');
+    log('✅ 组合采集完成');
+  } catch (e) {
+    resultDiv.innerHTML = `<p style="color:red;">❌ ${e.message}</p>`;
+  }
 }
 
 // ── Tab 2: 会话管理 ──
