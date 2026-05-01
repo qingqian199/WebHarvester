@@ -163,13 +163,13 @@ export class BilibiliCrawler implements ISiteCrawler {
       for (const [k, v] of Object.entries(resolved)) {
         if (!params[k]) params[k] = v;
       }
-      // 如果只有 bvid，调用视频信息 API 获取 aid 和 mid
+      // 如果只有 bvid，用非签名接口查询 aid 和 mid
       if (params.bvid && !params.aid) {
         try {
-          const r = await this.fetchApi("视频信息", { aid: params.bvid }, session);
-          const d = JSON.parse(r.body);
-          if (d.data?.View?.aid) params.aid = String(d.data.View.aid);
-          if (d.data?.View?.owner?.mid) params.mid = String(d.data.View.owner.mid);
+          const r = await fetch("https://api.bilibili.com/x/web-interface/view?bvid=" + params.bvid);
+          const d = await r.json() as any;
+          if (d.data?.aid) params.aid = String(d.data.aid);
+          if (d.data?.owner?.mid) params.mid = String(d.data.owner.mid);
         } catch {}
       }
     }

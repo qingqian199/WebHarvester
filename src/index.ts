@@ -273,10 +273,12 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
           const def = contentUnits.find((d: any) => d.id === u);
           def?.requiredParams.forEach((p: string) => neededParams.add(p));
         });
-        const userParams: Record<string, string> = {};
+        const userParams: Record<string, string> = { url: action.url };
         for (const p of neededParams) {
-          const { val } = await inq.prompt([{ type: "input", name: "val", message: `请输入 ${p}：` }]);
-          userParams[p] = val;
+          if (!userParams[p]) {
+            const { val } = await inq.prompt([{ type: "input", name: "val", message: `请输入 ${p}：` }]);
+            userParams[p] = val;
+          }
         }
 
         console.log(`\n⏳ 正在组合采集 ${selectedUnits.length} 个内容单元...\n`);
