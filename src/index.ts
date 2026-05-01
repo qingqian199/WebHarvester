@@ -239,10 +239,18 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
   const crawler = dispatcher.dispatch(action.url);
   if (!crawler) { console.log("❌ 无匹配的特化爬虫"); return; }
 
+  const { default: inq } = await import("inquirer");
+  const sm = new FileSessionManager();
+  const allProfiles = await sm.listProfiles();
+  const profileChoices = [
+    { name: "🌐 游客态（不使用登录态）", value: "" },
+    ...allProfiles.map((p) => ({ name: `📂 ${p}`, value: p })),
+  ];
+  const { chosenProfile } = await inq.prompt([{ type: "list", name: "chosenProfile", message: "选择登录会话：", choices: profileChoices }]);
+
   let session: import("./core/ports/ISiteCrawler").CrawlerSession | undefined;
-  if (action.profile) {
-    const sm = new FileSessionManager();
-    const s = await sm.load(action.profile);
+  if (chosenProfile) {
+    const s = await sm.load(chosenProfile);
     if (s) session = { cookies: s.cookies, localStorage: s.localStorage };
   }
 
