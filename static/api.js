@@ -14,8 +14,13 @@ function qs(s, p) { return (p || document).querySelector(s); }
 function qsa(s, p) { return (p || document).querySelectorAll(s); }
 
 async function api(path, opts) {
-  const res = await fetch(path, opts);
-  return res.json();
+  try {
+    const res = await fetch(path, opts);
+    return await res.json();
+  } catch (e) {
+    console.error("API error:", path, e.message);
+    return { code: -1, msg: e.message, data: [] };
+  }
 }
 
 // ── 导航 ──
@@ -26,7 +31,7 @@ function switchView(view) {
   el("view-" + view).classList.add("active");
   qs(`.nav-item[data-view="${view}"]`).classList.add("active");
   if (view === "dashboard") loadDashboard();
-  if (view === "capture") { wizardGo(1); switchCaptureTab(); }
+  if (view === "capture") { wizardGo(1); }
   if (view === "sessions") loadSessionCards();
   if (view === "results") loadResultFilesNew();
   if (view === "system") fetchHealth();
@@ -71,7 +76,7 @@ async function loadDashboard() {
 let wizardSite = "xiaohongshu";
 let wizardUnits = [];
 
-function switchCaptureTab() {
+async function switchCaptureTab() {
   const cards = [
     { id: "xiaohongshu", icon: "🔴", name: "小红书", status: "5 verified" },
     { id: "zhihu", icon: "🟠", name: "知乎", status: "11 verified" },
@@ -84,7 +89,7 @@ function switchCaptureTab() {
       <div style="font-size:0.8rem;color:#94a3b8;">${c.status}</div>
     </div>`
   ).join("");
-  loadUnits();
+  await loadUnits();
 }
 
 async function selectSite(id, cardEl) {
@@ -112,11 +117,11 @@ async function wizardGo(step) {
   if (!target) { console.error("wizardStep" + step + " not found"); return; }
   target.classList.add("active");
   qsa(".step").forEach(s => { if (parseInt(s.dataset.step) <= step) s.classList.add("active"); });
-  if (step === 1) { switchCaptureTab(); await loadUnits(); }
+  if (step === 1) { await switchCaptureTab(); }
   if (step === 2) await loadUnits();
 }
 
-function wizardNext() {
+async function wizardNext() {
   const current = parseInt(qs(".wizard-step-content.active")?.id?.replace("wizardStep", "") || "1");
   if (current === 1 && !wizardSite) { toast("请选择站点", "warn"); return; }
   if (current === 2) {
@@ -124,12 +129,12 @@ function wizardNext() {
     if (checked.length === 0) { toast("请至少选择一项", "warn"); return; }
     wizardUnits = Array.from(checked).map(c => c.value);
   }
-  wizardGo(Math.min(current + 1, 3));
+  await wizardGo(Math.min(current + 1, 3));
 }
 
-function wizardPrev() {
+async function wizardPrev() {
   const current = parseInt(qs(".wizard-step-content.active")?.id?.replace("wizardStep", "") || "1");
-  wizardGo(Math.max(current - 1, 1));
+  await wizardGo(Math.max(current - 1, 1));
 }
 
 function updateWizardParams() {
@@ -222,7 +227,7 @@ async function deleteSession(name) {
   if (!confirm("删除会话 " + name + "？")) return;
   await api("/api/sessions/" + name, { method: "DELETE" });
   toast("已删除 " + name, "success");
-  loadSessionCards();
+  await loadSessionCards();
 }
 
 // ── 结果档案 ──
@@ -233,11 +238,18 @@ async function loadResultFilesNew() {
   const res = await api("/api/results");
   const list = res.data || [];
   const sel = el("resultSelect");
-  if (list.length === 0) { sel.innerHTML = "<option>暂无结果</option>"; return; }
+  if (list.length === 0) { sel.innerHTML = "<option>暂无结果</option>"; el("resultDetail").innerHTML = '<p style="color:#888;">暂无采集结果，请先执行采集任务</p>'; return; }
   sel.innerHTML = "<option value=''>-- 选择文件 --</option>" +
     list.map(f => `<option value="${f.filename}">${f.filename.split("/")[1] || f.filename}</option>`).join("");
   sel.onchange = () => loadResultDetail(sel.value);
-  if (selectedResult) { sel.value = selectedResult; loadResultDetail(selectedResult); }
+  // 自动选中第一个文件
+  if (!selectedResult && list.length > 0) {
+    sel.value = list[0].filename;
+    loadResultDetail(list[0].filename);
+  } else if (selectedResult) {
+    sel.value = selectedResult;
+    loadResultDetail(selectedResult);
+  }
 }
 
 async function loadResultDetail(filename) {
