@@ -285,7 +285,18 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
           const [k, ...vs] = pair.split("=");
           if (k) paramsRecord[k] = decodeURIComponent(vs.join("="));
         });
-        const result = await (crawler as any).fetchApi(epName, paramsRecord, session);
+
+        // 小红书支持登录态/游客态选择
+        let authMode: "logged_in" | "guest" = "logged_in";
+        if (crawler.name === "xiaohongshu") {
+          const { mode } = await inq.prompt([{ type: "list", name: "mode", message: "认证模式：", choices: [
+            { name: "🔐 已登录（使用完整 session）", value: "logged_in" },
+            { name: "🌐 游客态（仅设备标识）", value: "guest" },
+          ]}]);
+          authMode = mode;
+        }
+
+        const result = await (crawler as any).fetchApi(epName, paramsRecord, session, authMode);
         const outDir = path.resolve("output", crawler.name);
         await fs.mkdir(outDir, { recursive: true });
         const outFile = path.join(outDir, `${crawler.name}-${epName}-${Date.now()}.json`);

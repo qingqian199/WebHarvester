@@ -129,6 +129,8 @@ export class BrowserLifecycleManager {
         "--no-default-browser-check",
         "--no-first-run",
         "--disable-dev-shm-usage",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-web-security",
       ],
     });
 
@@ -146,9 +148,40 @@ export class BrowserLifecycleManager {
     this.page = await this.context.newPage();
 
     await this.page.addInitScript((platform: string) => {
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-      Object.defineProperty(navigator, "plugins", { get: () => [] });
+      // 隐藏自动化标志
+      Object.defineProperty(navigator, "webdriver", { get: () => false });
+
+      // 模拟真实插件列表
+      const pluginData = [
+        { name: "Chrome PDF Plugin", filename: "internal-pdf-viewer" },
+        { name: "Chrome PDF Viewer", filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai" },
+        { name: "Native Client", filename: "internal-nacl-plugin" },
+      ];
+      Object.defineProperty(navigator, "plugins", {
+        get: () => ({
+          length: pluginData.length,
+          item: (i: number) => pluginData[i] || null,
+          namedItem: (n: string) => pluginData.find(p => p.name === n) || null,
+          refresh: () => {},
+          ...Object.fromEntries(pluginData.map((p, i) => [i, p])),
+        }),
+      });
+
+      // 覆盖 permissions.query 不暴露自动化
+      const originalQuery = (navigator as any).permissions.query.bind((navigator as any).permissions);
+      (navigator as any).permissions.query = (p: any) =>
+        p.name === "notifications"
+          ? Promise.resolve({ state: "denied" })
+          : originalQuery(p);
+
+      // 覆盖 languages 为正常值
+      Object.defineProperty(navigator, "languages", { get: () => ["zh-CN", "zh", "en"] });
+
+      // 覆盖 platform
       Object.defineProperty(navigator, "platform", { get: () => platform });
+
+      // 覆盖硬件并发数
+      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
     }, ANTI_DETECT_PLATFORM);
 
     this.startNetworkCapture();

@@ -159,9 +159,30 @@ export class XhsCrawler implements ISiteCrawler {
    * @param params 查询参数字符串（如 "keyword=test"），不传则使用默认参数。
    * @param session 可选登录态。
    */
-  async fetchApi(endpointName: string, params?: Record<string, string>, session?: CrawlerSession): Promise<PageData> {
+  /**
+   * 执行 API 调用。
+   * @param endpointName 端点名（XhsApiEndpoints 中的 name）。
+   * @param params 请求参数。
+   * @param session 可选登录态。
+   * @param authMode 认证模式：'logged_in'（默认，使用完整 session）| 'guest'（仅保留设备标识）。
+   */
+  async fetchApi(
+    endpointName: string,
+    params?: Record<string, string>,
+    session?: CrawlerSession,
+    authMode: "logged_in" | "guest" = "logged_in",
+  ): Promise<PageData> {
     const ep = XhsApiEndpoints.find((e) => e.name === endpointName);
     if (!ep) throw new Error(`未知端点: ${endpointName}`);
+
+    // 游客态：只保留设备标识 Cookie，移除登录凭据
+    let effectiveSession = session;
+    if (authMode === "guest" && session) {
+      const guestCookies = session.cookies.filter((c) =>
+        ["a1", "buvid", "device", "webId"].some((k) => c.name.toLowerCase().includes(k)),
+      );
+      effectiveSession = { cookies: guestCookies, localStorage: session.localStorage };
+    }
 
     const method = ep.method ?? "GET";
 
@@ -169,7 +190,7 @@ export class XhsCrawler implements ISiteCrawler {
       const body = this.fillTemplate(ep.bodyTemplate, params ?? {});
       const bodyStr = JSON.stringify(body);
       const url = `https://${XHS_API_HOST}${ep.path}`;
-      return this.fetch(url, session, { method: "POST", body: bodyStr,
+      return this.fetch(url, effectiveSession, { method: "POST", body: bodyStr,
         contentType: "application/json;charset=UTF-8" });
     }
 
@@ -177,7 +198,7 @@ export class XhsCrawler implements ISiteCrawler {
       ? Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&")
       : (ep.params ?? "");
     const url = `https://${XHS_API_HOST}${ep.path}${query ? "?" + query : ""}`;
-    return this.fetch(url, session);
+    return this.fetch(url, effectiveSession);
   }
 
   private fillTemplate(tpl: Record<string, any>, params: Record<string, string>): Record<string, any> {
