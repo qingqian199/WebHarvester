@@ -5,6 +5,14 @@ import { generateZse96, generateApiVersion } from "../../utils/crypto/zhihu-sign
 import { PlaywrightAdapter } from "../PlaywrightAdapter";
 import { ConsoleLogger } from "../ConsoleLogger";
 
+export const ZhihuFallbackEndpoints: ReadonlyArray<{
+  name: string; pageUrl: string; dataPath: string;
+}> = [
+  { name: "知乎搜索", pageUrl: "https://www.zhihu.com/search?type=content&q={keyword}", dataPath: "search.entries" },
+  { name: "用户主页", pageUrl: "https://www.zhihu.com/people/{member_id}", dataPath: "user.profile" },
+  { name: "文章详情", pageUrl: "https://zhuanlan.zhihu.com/p/{article_id}", dataPath: "article.content" },
+];
+
 const ZHIHU_DOMAIN = "zhihu.com";
 const ZHIHU_API_HOSTS = ["www.zhihu.com", "zhuanlan.zhihu.com"];
 
@@ -18,12 +26,16 @@ export interface ZhihuEndpointDef {
 }
 
 export const ZhihuApiEndpoints: ReadonlyArray<ZhihuEndpointDef> = [
-  // 从采集结果确认的端点
-  { name: "当前用户", path: "/api/v4/me", params: "include=email", status: "sig_pending" },
-  { name: "文章详情", path: "/api/v4/articles/{article_id}", status: "sig_pending" },
-  { name: "成员信息", path: "/api/v4/members/{member_id}", params: "include=gender,locations,employments", status: "sig_pending" },
+  // ✅ 已验证（x-zse-96 签名通过）
+  { name: "当前用户", path: "/api/v4/me", params: "include=email", status: "verified" },
+  { name: "成员信息", path: "/api/v4/members/{member_id}", params: "include=gender,locations,employments", status: "verified" },
+  { name: "热门搜索", path: "/api/v4/search/hot_search", status: "verified" },
+
+  // 🔶 待验证
+  { name: "文章详情（专栏）", path: "/api/articles/{article_id}", status: "sig_pending" },
+  { name: "文章推荐", path: "/api/articles/{article_id}/recommendation", params: "include=data%5B*%5D.article.column&limit=5", status: "sig_pending" },
+  { name: "搜索预设词", path: "/api//v4/search/preset_words", status: "sig_pending" },
   { name: "文章评论", path: "/api/v4/comment_v5/articles/{article_id}/root_comment", params: "order_by=score&limit=5", status: "sig_pending" },
-  { name: "热门搜索", path: "/api/v4/search/hot_search", status: "sig_pending" },
 ];
 
 /**
@@ -96,7 +108,9 @@ export class ZhihuCrawler implements ISiteCrawler {
     }
 
     const query = ep.params && params ? this.fillParams(ep.params, params) : ep.params ?? "";
-    const url = `https://www.zhihu.com${apiPath}${query ? "?" + query : ""}`;
+    // 专栏相关端点走 zhuanlan.zhihu.com
+    const baseHost = ep.path.startsWith("/api/articles") ? "zhuanlan.zhihu.com" : "www.zhihu.com";
+    const url = `https://${baseHost}${apiPath}${query ? "?" + query : ""}`;
     return this.fetch(url, session);
   }
 
@@ -116,6 +130,7 @@ export class ZhihuCrawler implements ISiteCrawler {
     const browser = new PlaywrightAdapter(logger);
 
     try {
+      const startTime = Date.now();
       await browser.launch(url, session ? {
         cookies: session.cookies.map((c) => ({
           name: c.name, value: c.value, domain: c.domain ?? ".zhihu.com",
@@ -130,11 +145,12 @@ export class ZhihuCrawler implements ISiteCrawler {
         "(() => { const m = document.querySelector('.RichText'); return m ? m.innerText.slice(0,5000) : document.body.innerText.slice(0,5000); })()",
       ).catch(() => "");
 
+      const finishTime = Date.now();
       return {
         url, statusCode: 200,
         body: JSON.stringify({ title, content: bodyText }),
         headers: { "content-type": "application/json;charset=utf-8" },
-        responseTime: Date.now() - Date.now(),
+        responseTime: finishTime - startTime,
         capturedAt: new Date().toISOString(),
       };
     } finally {
