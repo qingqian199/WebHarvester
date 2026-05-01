@@ -26,12 +26,17 @@ function switchView(view) {
   el("view-" + view).classList.add("active");
   qs(`.nav-item[data-view="${view}"]`).classList.add("active");
   if (view === "dashboard") loadDashboard();
+  if (view === "capture") { wizardGo(1); switchCaptureTab(); }
   if (view === "sessions") loadSessionCards();
   if (view === "results") loadResultFilesNew();
   if (view === "system") fetchHealth();
 }
 
 window.onload = () => {
+  // 绑定导航点击
+  document.querySelectorAll(".nav-item").forEach(btn => {
+    btn.addEventListener("click", () => switchView(btn.dataset.view));
+  });
   loadDashboard();
   setInterval(fetchHealth, 5000);
 };
