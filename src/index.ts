@@ -19,6 +19,7 @@ import { ArticleCaptureService } from "./services/ArticleCaptureService";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
 import { XhsCrawler, XhsApiEndpoints, XhsFallbackEndpoints } from "./adapters/crawlers/XhsCrawler";
 import { ZhihuCrawler } from "./adapters/crawlers/ZhihuCrawler";
+import { BilibiliCrawler } from "./adapters/crawlers/BilibiliCrawler";
 import { BrowserLifecycleManager } from "./adapters/BrowserLifecycleManager";
 import { captureSessionFromPage } from "./utils/session-helper";
 import { SessionState } from "./core/ports/ISessionManager";
@@ -422,6 +423,7 @@ function createCrawlerDispatcher(appCfg: Awaited<ReturnType<typeof loadAppConfig
   const d = new CrawlerDispatcher();
   if (appCfg.crawlers?.xiaohongshu === "enabled") d.register(new XhsCrawler());
   if (appCfg.crawlers?.zhihu === "enabled") d.register(new ZhihuCrawler());
+  if (appCfg.crawlers?.bilibili === "enabled") d.register(new BilibiliCrawler());
   return d;
 }
 
