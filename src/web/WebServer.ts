@@ -66,6 +66,10 @@ export class WebServer {
           await this.handleApiSessions(req, res);
         } else if (req.url?.startsWith("/api/sessions/") && req.method === "DELETE") {
           await this.handleApiDeleteSession(req, res);
+        } else if (req.url === "/api/results" && req.method === "GET") {
+          await this.handleApiResults(res);
+        } else if (req.url?.startsWith("/api/results/") && req.method === "GET") {
+          await this.handleApiResultDetail(req, res);
         } else {
           res.writeHead(404);
           res.end("Not Found");
@@ -209,6 +213,49 @@ export class WebServer {
     await this.sessionManager.deleteProfile(name);
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ code: 0, msg: `已删除会话 ${name}` }));
+  }
+
+  private async handleApiResults(res: http.ServerResponse) {
+    const outputDir = path.resolve("output");
+    const entries: Array<{ filename: string; url: string; timestamp: string; size: number }> = [];
+    try {
+      const dirs = await fs.readdir(outputDir, { withFileTypes: true });
+      for (const dir of dirs) {
+        if (!dir.isDirectory()) continue;
+        const files = await fs.readdir(path.join(outputDir, dir.name));
+        for (const f of files) {
+          if (!f.endsWith(".json")) continue;
+          const fullPath = path.join(outputDir, dir.name, f);
+          const stat = await fs.stat(fullPath);
+          let url = "";
+          try {
+            const content = await fs.readFile(fullPath, "utf-8");
+            const parsed = JSON.parse(content);
+            url = parsed.targetUrl ?? parsed.url ?? "";
+          } catch { /* ignore parse errors */ }
+          entries.push({ filename: `${dir.name}/${f}`, url, timestamp: stat.mtime.toISOString(), size: stat.size });
+        }
+      }
+    } catch { /* no output dir */ }
+    entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data: entries }));
+  }
+
+  private async handleApiResultDetail(req: http.IncomingMessage, res: http.ServerResponse) {
+    const rawName = req.url!.replace("/api/results/", "");
+    const safeName = path.normalize(rawName).replace(/^(\.\.(\/|\\))+/, "");
+    const fullPath = path.resolve("output", safeName);
+    if (!fullPath.startsWith(path.resolve("output"))) {
+      res.writeHead(403); res.end(JSON.stringify({ code: -1, msg: "路径穿越拦截" })); return;
+    }
+    try {
+      const content = await fs.readFile(fullPath, "utf-8");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ code: 0, data: JSON.parse(content) }));
+    } catch {
+      res.writeHead(404); res.end(JSON.stringify({ code: -1, msg: "文件不存在" }));
+    }
   }
 
   private async handleHealth(res: http.ServerResponse) {

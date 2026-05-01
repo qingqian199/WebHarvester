@@ -12,13 +12,13 @@ function switchTab(tabId) {
 }
 
 window.onload = async () => {
-  await refreshProfileSelect();
-  await loadCrawlers();
-  await loadResultFiles();
-  await fetchHealth();
-  await loadSessionCards();
-  setInterval(fetchHealth, 10000);
-  document.getElementById('collectMode').onchange = () => {
+    await refreshProfileSelect();
+    await loadCrawlers();
+    await fetchHealth();
+    await loadSessionCards();
+    await loadResultFiles();
+    setInterval(fetchHealth, 10000);
+    document.getElementById('collectMode').onchange = () => {
     document.getElementById('crawlerSelectRow').style.display =
       document.getElementById('collectMode').value === 'crawler' ? 'flex' : 'none';
   };
@@ -118,12 +118,106 @@ async function deleteSession(name) {
 
 async function loadResultFiles() {
   try {
-    const res = await fetch('/api/profiles');
-    const data = await res.json();
-  } catch {}
+    const res = await api('/api/results');
+    const list = res.data || [];
+    const select = document.getElementById('resultSelect');
+    const container = document.getElementById('resultDetail');
+    if (list.length === 0) {
+      select.innerHTML = '<option>-- 暂无采集结果 --</option>';
+      container.innerHTML = '<p style="color:#888;">暂无采集结果，请先执行采集任务</p>';
+      return;
+    }
+    select.innerHTML = '<option value="">-- 选择结果文件 --</option>' +
+      list.map(f => `<option value="${f.filename}">${f.filename.split('/')[0]} / ${f.filename.split('/')[1]} (${(f.size/1024).toFixed(1)}KB)</option>`).join('');
+    select.onchange = () => loadResultDetail(select.value);
+    // 清理之前可能残留的 onchange
+  } catch { document.getElementById('resultDetail').innerHTML = '<p style="color:red;">❌ 加载列表失败</p>'; }
+}
+
+async function loadResultDetail(filename) {
+  if (!filename) { document.getElementById('resultDetail').innerHTML = ''; return; }
+  const container = document.getElementById('resultDetail');
+  container.innerHTML = '<p style="color:#888;">⏳ 加载中...</p>';
   try {
-    const res = await fetch('/');
-  } catch {}
+    const res = await api('/api/results/' + encodeURIComponent(filename));
+    const result = res.data;
+    const url = result.targetUrl || result.url || '未知';
+    const traceId = result.traceId || '—';
+    const createdAt = result.capturedAt || result.finishedAt ? new Date(result.finishedAt || result.capturedAt).toLocaleString() : '—';
+    const statusCode = result.statusCode || '—';
+
+    const hasClassification = result.classification;
+    const core = result.classification?.core || {};
+    const secondary = result.classification?.secondary || {};
+    const apiEndpoints = core.apiEndpoints || result.analysis?.apiRequests || [];
+    const authTokens = core.authTokens || {};
+    const antiCrawl = core.antiCrawlDefenses || [];
+    const allReqs = secondary.allCapturedRequests || result.networkRequests || [];
+    const hiddenFields = secondary.hiddenFields || [];
+
+    let html = `<div class="card" style="margin-bottom:12px;">
+      <div class="card-title">${url}</div>
+      <div class="card-body">
+        <span>Trace: ${traceId}</span>
+        <span>采集时间: ${createdAt}</span>
+        <span>请求数: ${allReqs.length}</span>
+        <span>API端点: ${apiEndpoints.length}</span>
+        ${statusCode !== '—' ? `<span>状态码: ${statusCode}</span>` : ''}
+      </div>
+    </div>`;
+
+    // 核心信息
+    if (hasClassification) html += '<details open><summary style="cursor:pointer;font-weight:bold;margin:8px 0;">🔑 核心信息</summary>';
+    if (apiEndpoints.length > 0) {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">';
+      html += '<tr style="background:#334155;"><th style="padding:4px;">方法</th><th style="padding:4px;">URL</th><th style="padding:4px;">状态</th></tr>';
+      apiEndpoints.slice(0, 30).forEach(r => {
+        html += `<tr style="border-bottom:1px solid #334155;"><td style="padding:4px;">${r.method}</td><td style="padding:4px;max-width:400px;overflow:hidden;text-overflow:ellipsis;">${r.url}</td><td style="padding:4px;">${r.statusCode}</td></tr>`;
+      });
+      if (apiEndpoints.length > 30) html += '<tr><td colspan="3" style="padding:4px;color:#888;">仅展示前 30 条</td></tr>';
+      html += '</table>';
+    }
+    if (Object.keys(authTokens).length > 0) {
+      html += '<h4 style="margin:8px 0 4px;">鉴权令牌</h4>';
+      Object.entries(authTokens).forEach(([k, v]) => {
+        const masked = typeof v === 'string' && v.length > 12 ? v.slice(0,6) + '****' + v.slice(-4) : v;
+        html += `<div style="font-size:0.8rem;padding:2px 0;"><code>${k}</code>: ${masked}</div>`;
+      });
+    }
+    if (antiCrawl.length > 0) {
+      html += '<h4 style="margin:8px 0 4px;">反爬检测</h4>';
+      antiCrawl.forEach(a => { html += `<div style="font-size:0.8rem;padding:2px 0;">${a.severity === 'high' ? '🔴' : '🟡'} ${a.category}</div>`; });
+    }
+    if (hasClassification) html += '</details>';
+
+    // 次要信息
+    if (hasClassification) {
+      html += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:bold;">📄 次要信息</summary>';
+      html += `<div style="font-size:0.8rem;padding:4px 0;">全量请求: ${allReqs.length} | 隐藏字段: ${hiddenFields.length}</div>`;
+      if (hiddenFields.length > 0) {
+        hiddenFields.forEach(f => { html += `<div style="font-size:0.8rem;">${f.name}: ${f.value || ''}</div>`; });
+      }
+      html += '</details>';
+    }
+
+    // 下载按钮
+    html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">';
+    html += `<button onclick="downloadFile('${filename}','json')">📥 JSON</button>`;
+    html += '</div>';
+
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<p style="color:red;">❌ 加载失败: ${e.message}</p>`;
+  }
+}
+
+async function downloadFile(filename, format) {
+  const res = await api('/api/results/' + encodeURIComponent(filename));
+  const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename.replace('/', '-');
+  a.click();
 }
 
 // ── Tab 4: 服务状态 ──
