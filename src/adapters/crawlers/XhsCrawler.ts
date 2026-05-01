@@ -8,11 +8,32 @@ const XHS_API_HOST = "edith.xiaohongshu.com";
 
 /**
  * 小红书 API 端点定义。
- * name 用于 CLI/Web 显示；path 为 API 路径；params 为可选默认参数。
+ *
+ * name   — 用于 CLI/Web 显示的端点名。
+ * path   — API 路径。
+ * params — 默认查询参数（可覆盖）。
+ * status — 可用性状态：
+ *   "verified"    — 签名 + 参数全部验证通过，返回 code=0/1000
+ *   "param_pending" — 签名通过（返回 JSON），但参数格式待确认
+ *   "risk_ctrl"   — 签名通过，但触发账号风控
  */
-export const XhsApiEndpoints = [
-  { name: "用户信息（当前）", path: "/api/sns/web/v2/user/me", defaultParams: "" },
-  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E" },
+export const XhsApiEndpoints: ReadonlyArray<{
+  name: string;
+  path: string;
+  defaultParams: string;
+  status: "verified" | "param_pending" | "risk_ctrl";
+}> = [
+  // ── 已验证可用 ──
+  { name: "用户信息（当前）", path: "/api/sns/web/v2/user/me", defaultParams: "", status: "verified" },
+  { name: "搜索建议", path: "/api/sns/web/v1/search/recommend", defaultParams: "keyword=%E5%8E%9F%E7%A5%9E", status: "verified" },
+
+  // ── 签名有效，参数待修复 ──
+  { name: "用户帖子列表", path: "/api/sns/web/v1/user_posted", defaultParams: "user_id=PLACEHOLDER&num=5", status: "param_pending" },
+  { name: "收藏列表", path: "/api/sns/web/v1/board/user", defaultParams: "user_id=PLACEHOLDER&num=5", status: "param_pending" },
+  { name: "其他用户信息", path: "/api/sns/web/v1/user/otherinfo", defaultParams: "target_user_id=PLACEHOLDER", status: "param_pending" },
+
+  // ── 签名有效但触发风控 ──
+  { name: "搜索笔记", path: "/api/sns/web/v1/search/notes", defaultParams: "", status: "risk_ctrl" },
 ] as const;
 
 /**
@@ -105,8 +126,17 @@ export class XhsCrawler implements ISiteCrawler {
   async fetchApi(endpointName: string, params?: string, session?: CrawlerSession): Promise<PageData> {
     const ep = XhsApiEndpoints.find((e) => e.name === endpointName);
     if (!ep) throw new Error(`未知端点: ${endpointName}`);
+
+    if (ep.status === "param_pending") {
+      console.warn(`⚠️ ${ep.name} 参数格式待确认，参考: ${ep.defaultParams}`);
+    }
+    if (ep.status === "risk_ctrl") {
+      console.warn(`⚠️ ${ep.name} 可能触发风控（code 300011），请确保请求间隔`);
+    }
+
     const query = params ?? ep.defaultParams;
-    const url = `https://${XHS_API_HOST}${ep.path}${query ? "?" + query : ""}`;
+    const cleanParams = query.replace(/PLACEHOLDER/g, "");
+    const url = `https://${XHS_API_HOST}${ep.path}${cleanParams ? "?" + cleanParams : ""}`;
     return this.fetch(url, session);
   }
 }
