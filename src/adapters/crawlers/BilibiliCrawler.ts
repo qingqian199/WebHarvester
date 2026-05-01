@@ -48,6 +48,7 @@ export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
   // 🔶 待验证
   { name: "弹幕数据(分段)", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid=37660265907&type=1&segment_index=1", status: "sig_pending" },
   { name: "用户空间信息", path: "/x/space/wbi/acc/info", needWbi: true, params: "mid=316627722", status: "sig_pending" },
+  { name: "用户投稿", path: "/x/space/wbi/arc/search", needWbi: true, params: "mid=PLACEHOLDER&ps=5&pn=1", status: "sig_pending" },
 ];
 
 /**
@@ -210,9 +211,20 @@ export class BilibiliCrawler implements ISiteCrawler {
             break;
           }
           case "bili_user_videos": {
-            const r = await this.fetchPageData("用户视频列表", { mid: params.mid || "" }, session);
-            const parsed = JSON.parse(r.body);
-            results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
+            // 优先签名直连（但空间接口返回 -403，捕获后降级）
+            let data: any = null;
+            let method = "html_extract";
+            let respTime = 0;
+            try {
+              const r = await this.fetchApi("用户投稿", { mid: params.mid || "", ps: "50", pn: "1" }, session);
+              const d = JSON.parse(r.body);
+              if (d.code === 0) { data = d; method = "signature"; respTime = r.responseTime; }
+            } catch {}
+            if (!data) {
+              const r = await this.fetchPageData("用户视频列表", { mid: params.mid || "" }, session);
+              data = JSON.parse(r.body); respTime = r.responseTime;
+            }
+            results.push({ unit, status: "success", data, method, responseTime: respTime });
             break;
           }
           case "bili_video_comments": {
