@@ -246,6 +246,15 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
     if (s) session = { cookies: s.cookies, localStorage: s.localStorage };
   }
 
+  // 加载 B站 WBI 密钥
+  if (crawler.name === "bilibili" && session?.localStorage) {
+    const ls = session.localStorage;
+    const extractKey = (url: string) => { try { return url.split("/").pop()?.split(".")[0]?.split("-").slice(1).join("-") || ""; } catch { return ""; } };
+    const imgKey = ls.wbi_img_url ? extractKey(ls.wbi_img_url) : "7cd084941338484aae1ad9425b84077";
+    const subKey = ls.wbi_sub_url ? extractKey(ls.wbi_sub_url) : "4932caff0ff746eab6f01bf08b70ac4";
+    (crawler as any).setWbiKeys(imgKey, subKey);
+  }
+
   try {
     // 组合采集：小红书/知乎/B站
     const contentUnits = (crawler.name === "xiaohongshu") ? XHS_CONTENT_UNITS
