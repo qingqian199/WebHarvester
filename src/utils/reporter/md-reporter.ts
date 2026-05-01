@@ -1,14 +1,13 @@
 import { HarvestResult } from "../../core/models";
-import { filterApiRequests, filterHiddenFields } from "../../core/rules";
 import { MAX_DISPLAY_ITEMS, MAX_CAPTION_LENGTH } from "../../core/constants/GlobalConstant";
+import { DataClassifier } from "../../core/services/DataClassifier";
 
 export function generateMarkdownReport(result: HarvestResult): string {
-  const { traceId, targetUrl, networkRequests, elements, startedAt, finishedAt } = result;
+  const classifier = new DataClassifier();
+  const classified = classifier.classify(result);
+  const { core, secondary } = classified;
+  const { traceId, targetUrl, startedAt, finishedAt } = result;
   const dur = finishedAt - startedAt;
-  const apiList = filterApiRequests(networkRequests);
-  const hiddenList = filterHiddenFields(elements);
-  const authLocal = result.analysis?.authInfo?.localStorage ?? {};
-  const authSession = result.analysis?.authInfo?.sessionStorage ?? {};
 
   let md = "# Web站点资产采集报告\n\n";
   md += `> 任务ID：${traceId}\n`;
@@ -16,15 +15,14 @@ export function generateMarkdownReport(result: HarvestResult): string {
   md += `> 采集耗时：${dur} ms\n`;
   md += `> 采集时间：${new Date(startedAt).toLocaleString()}\n\n`;
 
-  md += "## 一、数据概览\n\n";
-  md += `- 全量网络请求：${networkRequests.length} 条\n`;
-  md += `- 业务接口：${apiList.length} 条\n`;
-  md += `- 页面元素：${elements.length} 个\n`;
-  md += `- 隐藏安全字段：${hiddenList.length} 个\n\n`;
+  // ── 核心信息 ──
+  md += "## 🔑 核心信息\n\n";
 
-  md += "## 二、核心业务接口\n\n";
-  if (apiList.length === 0) md += "无有效业务接口\n\n";
-  else {
+  md += "### API 端点\n\n";
+  const apiList = core.apiEndpoints;
+  if (apiList.length === 0) {
+    md += "无业务 API\n\n";
+  } else {
     md += `| 方法 | 状态码 | 链接 |
 |------|--------|------|
 `;
@@ -33,27 +31,50 @@ export function generateMarkdownReport(result: HarvestResult): string {
       md += `| ${item.method} | ${item.statusCode} | ${url} |
 `;
     }
-    if (apiList.length > MAX_DISPLAY_ITEMS) md += `\n> 仅展示前${MAX_DISPLAY_ITEMS}条，完整请查看CSV文件\n`;
+    if (apiList.length > MAX_DISPLAY_ITEMS) {
+      md += `\n> 仅展示前${MAX_DISPLAY_ITEMS}条，完整请查看JSON文件\n`;
+    }
   }
 
-  md += "\n## 三、授权令牌信息\n\n";
-  const MASK_MIN_LEN = 10;
-  const MASK_PREFIX = 6;
-  const MASK_SUFFIX = -4;
-  const mask = (s: string) => s.length < MASK_MIN_LEN ? s : `${s.slice(0, MASK_PREFIX)}****${s.slice(MASK_SUFFIX)}`;
-  if (Object.keys(authLocal).length || Object.keys(authSession).length) {
-    for (const [k, v] of Object.entries(authLocal)) md += `- LocalStorage【${k}】：${mask(v)}\n`;
-    for (const [k, v] of Object.entries(authSession)) md += `- SessionStorage【${k}】：${mask(v)}\n`;
-  } else md += "未检测到授权令牌、密钥数据\n";
-
-  md += "\n## 四、隐藏安全字段\n\n";
-  if (hiddenList.length) {
-    for (const f of hiddenList) {
-      const name = f.attributes.name || "unnamed";
-      md += `- ${name}：${f.attributes.value ?? ""}\n`;
+  md += "\n### 鉴权令牌\n\n";
+  const tokens = core.authTokens;
+  if (Object.keys(tokens).length === 0) {
+    md += "未检测到\n\n";
+  } else {
+    const mask = (s: string) => s.length < 12 ? s : `${s.slice(0, 6)}****${s.slice(-4)}`;
+    for (const [k, v] of Object.entries(tokens)) {
+      md += `- \`${k}\`：${mask(v)}\n`;
     }
-  } else md += "未检测到隐藏安全字段\n";
+  }
 
-  md += "\n---\n自动生成 by WebHarvester";
+  md += "\n### 反爬检测\n\n";
+  if (core.antiCrawlDefenses.length === 0) {
+    md += "未检测到反爬机制\n\n";
+  } else {
+    for (const item of core.antiCrawlDefenses) {
+      const level = item.severity === "high" ? "🔴" : item.severity === "medium" ? "🟡" : "🟢";
+      md += `- ${level} [${item.category}] ${item.requestKey.slice(0, 80)}...\n`;
+    }
+  }
+
+  // ── 次要信息 ──
+  md += "\n## 📄 次要信息\n\n";
+  md += `- 全量网络请求：${secondary.allCapturedRequests.length} 条\n`;
+  md += `- DOM 元素：${secondary.domStructure.length} 个\n`;
+  md += `- 隐藏字段：${secondary.hiddenFields.length} 个\n`;
+  if (secondary.performanceMetrics) {
+    md += `- 页面加载：${secondary.performanceMetrics.duration}ms / 协议 ${secondary.performanceMetrics.protocol}\n`;
+  }
+
+  md += "\n### 隐藏字段\n\n";
+  if (secondary.hiddenFields.length === 0) {
+    md += "未检测到\n";
+  } else {
+    for (const f of secondary.hiddenFields) {
+      md += `- ${f.name}：${f.value ?? ""}\n`;
+    }
+  }
+
+  md += "\n---\n> 数据分类 v1 | 自动生成 by WebHarvester\n";
   return md;
 }
