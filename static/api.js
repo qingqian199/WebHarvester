@@ -1,288 +1,332 @@
-function log(text) {
-  const box = document.getElementById("logBox");
-  box.innerHTML += `[${new Date().toLocaleTimeString()}] ${text}\n`;
-  box.scrollTop = box.scrollHeight;
+// ── 通用工具 ──
+
+function toast(msg, type = "info") {
+  const c = document.getElementById("toastContainer");
+  const t = document.createElement("div");
+  t.className = "toast " + type;
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
 }
 
-function switchTab(tabId, el) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById(tabId).classList.add('active');
-}
-
-window.onload = async () => {
-    await refreshProfileSelect();
-    await fetchHealth();
-    await loadSessionCards();
-    await loadResultFiles();
-    await onSiteChange();
-    setInterval(fetchHealth, 10000);
-};
-
-// ── 通用 ──
+function el(id) { return document.getElementById(id); }
+function qs(s, p) { return (p || document).querySelector(s); }
+function qsa(s, p) { return (p || document).querySelectorAll(s); }
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
   return res.json();
 }
 
-// ── Tab 1: 采集任务 ──
+// ── 导航 ──
 
-async function refreshProfileSelect() {
-  try {
-    const data = await api('/api/profiles');
-    const select = document.getElementById('profileSelect');
-    select.innerHTML = '<option value="">不使用登录状态</option>';
-    (data.data || []).forEach(p => { select.innerHTML += `<option value="${p}">${p}</option>`; });
-  } catch {}
+function switchView(view) {
+  qsa(".view").forEach(v => v.classList.remove("active"));
+  qsa(".nav-item").forEach(n => n.classList.remove("active"));
+  el("view-" + view).classList.add("active");
+  qs(`.nav-item[data-view="${view}"]`).classList.add("active");
+  if (view === "dashboard") loadDashboard();
+  if (view === "sessions") loadSessionCards();
+  if (view === "results") loadResultFilesNew();
+  if (view === "system") fetchHealth();
 }
 
-async function loadCrawlers() {
-  try {
-    const data = await api('/api/crawlers');
-    const sel = document.getElementById('crawlerSelect');
-    sel.innerHTML = '';
-    const enabled = Object.entries(data.data || {}).filter(([,v]) => v === 'enabled');
-    if (enabled.length === 0) { sel.innerHTML = '<option>无已启用爬虫</option>'; return; }
-    enabled.forEach(([k]) => { sel.innerHTML += `<option value="${k}">${k}</option>`; });
-  } catch {}
-}
+window.onload = () => {
+  loadDashboard();
+  setInterval(fetchHealth, 5000);
+};
 
-async function onSiteChange() {
-  const site = document.getElementById('collectSite').value;
-  const units = await api('/api/content-units?site=' + site);
-  const container = document.getElementById('unitCheckboxes');
-  if (!units.data || units.data.length === 0) {
-    container.innerHTML = '<p style="color:#888;">该站点无可用内容单元</p>'; return;
+// ── 仪表盘 ──
+
+async function loadDashboard() {
+  const [results, sessions] = await Promise.all([
+    api("/api/results").catch(() => ({ data: [] })),
+    api("/api/sessions").catch(() => ({ data: [] })),
+  ]);
+  const rList = (results.data || []).slice(0, 5);
+  const sList = (sessions.data || []).filter(s => s.status === "valid");
+
+  el("statCards").innerHTML = `
+    <div class="stat-card"><div class="num">3</div><div class="label">特化爬虫</div></div>
+    <div class="stat-card"><div class="num">${(results.data || []).length}</div><div class="label">采集结果</div></div>
+    <div class="stat-card"><div class="num">${sList.length}</div><div class="label">有效会话</div></div>
+  `;
+
+  if (rList.length === 0) {
+    el("recentResults").innerHTML = '<p style="color:#888;">暂无采集结果</p>';
+  } else {
+    el("recentResults").innerHTML = '<table><tr><th>文件</th><th>时间</th><th>大小</th></tr>' +
+      rList.map(f => `<tr><td>${f.filename}</td><td>${new Date(f.timestamp).toLocaleString()}</td><td>${(f.size/1024).toFixed(1)}KB</td></tr>`).join("") +
+      "</table>";
   }
-  container.innerHTML = units.data.map((u, i) =>
-    `<label class="card" style="cursor:pointer;display:flex;gap:8px;align-items:center;">
-      <input type="checkbox" value="${u.id}" checked="${i < 2}" onchange="onUnitChange()" />
-      <div><div style="font-weight:600;">${u.label}</div><div style="font-size:0.8rem;color:#94a3b8;">${u.description}</div></div>
-    </label>`
-  ).join('');
-  onUnitChange();
 }
 
-function onUnitChange() {
-  const checked = document.querySelectorAll('#unitCheckboxes input:checked');
-  const needed = new Set();
-  checked.forEach(cb => {
-    const card = cb.closest('.card');
-    // 简化：从所有单元中查找
-  });
-  // 动态显示参数输入
-  const paramDiv = document.getElementById('paramInputs');
-  paramDiv.innerHTML = `
-    <div class="form-row"><input id="paramKeyword" placeholder="keyword（搜索词）" style="flex:1;" /></div>
-    <div class="form-row"><input id="paramUserId" placeholder="user_id / member_id / mid" style="flex:1;" /></div>
-    <div class="form-row"><input id="paramNoteId" placeholder="note_id / article_id / aid / bvid" style="flex:1;" /></div>
+// ── 采集中心 ──
+
+let wizardSite = "xiaohongshu";
+let wizardUnits = [];
+
+function switchCaptureTab() {
+  const cards = [
+    { id: "xiaohongshu", icon: "🔴", name: "小红书", status: "5 verified" },
+    { id: "zhihu", icon: "🟠", name: "知乎", status: "11 verified" },
+    { id: "bilibili", icon: "🔵", name: "B站", status: "4 verified" },
+  ];
+  el("siteCards").innerHTML = cards.map(c =>
+    `<div class="site-card ${c.id === wizardSite ? 'selected' : ''}" onclick="selectSite('${c.id}',this)">
+      <div class="site-icon">${c.icon}</div>
+      <div class="site-name">${c.name}</div>
+      <div style="font-size:0.8rem;color:#94a3b8;">${c.status}</div>
+    </div>`
+  ).join("");
+  loadUnits();
+}
+
+function selectSite(id, el) {
+  wizardSite = id;
+  qsa(".site-card").forEach(c => c.classList.remove("selected"));
+  el.classList.add("selected");
+  loadUnits();
+}
+
+async function loadUnits() {
+  const res = await api("/api/content-units?site=" + wizardSite);
+  el("unitCards").innerHTML = (res.data || []).map((u, i) =>
+    `<label class="card" style="cursor:pointer;display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" value="${u.id}" ${i < 2 ? 'checked' : ''} onchange="updateWizardParams()" />
+      <div><div class="card-title">${u.label}</div><div class="card-body">${u.description}</div></div>
+    </label>`
+  ).join("");
+  updateWizardParams();
+}
+
+function wizardGo(step) {
+  qsa(".wizard-step-content").forEach(s => s.classList.remove("active"));
+  qsa(".step").forEach(s => s.classList.remove("active"));
+  el("wizardStep" + step).classList.add("active");
+  qsa(".step").forEach(s => { if (parseInt(s.dataset.step) <= step) s.classList.add("active"); });
+  if (step === 1) switchCaptureTab();
+  if (step === 2) loadUnits();
+}
+
+function wizardNext() {
+  const current = parseInt(qs(".wizard-step-content.active")?.id?.replace("wizardStep", "") || "1");
+  if (current === 1 && !wizardSite) { toast("请选择站点", "warn"); return; }
+  if (current === 2) {
+    const checked = qsa("#unitCards input:checked");
+    if (checked.length === 0) { toast("请至少选择一项", "warn"); return; }
+    wizardUnits = Array.from(checked).map(c => c.value);
+  }
+  wizardGo(Math.min(current + 1, 3));
+}
+
+function wizardPrev() {
+  const current = parseInt(qs(".wizard-step-content.active")?.id?.replace("wizardStep", "") || "1");
+  wizardGo(Math.max(current - 1, 1));
+}
+
+function updateWizardParams() {
+  el("paramFields").innerHTML = `
+    <div style="margin-bottom:8px;"><label style="color:#94a3b8;">keyword（搜索词）：</label><input id="pKeyword" placeholder="原神" /></div>
+    <div style="margin-bottom:8px;"><label style="color:#94a3b8;">user_id / member_id / mid：</label><input id="pUserId" placeholder="用户ID" /></div>
+    <div style="margin-bottom:8px;"><label style="color:#94a3b8;">note_id / article_id / aid：</label><input id="pNoteId" placeholder="内容ID" /></div>
   `;
 }
 
-async function startUnitCollect() {
-  const site = document.getElementById('collectSite').value;
-  const profile = document.getElementById('profileSelect').value;
-  const authMode = document.getElementById('authModeSelect').value;
-
-  const checked = document.querySelectorAll('#unitCheckboxes input:checked');
-  const units = Array.from(checked).map(cb => cb.value);
-  if (units.length === 0) return alert('请至少勾选一个内容单元');
+async function executeCapture() {
+  const btn = el("captureBtn");
+  btn.disabled = true; btn.textContent = "⏳ 采集中...";
+  el("captureProgress").style.display = "block";
+  el("captureResult").style.display = "none";
+  el("progressFill").style.width = "0%";
+  el("captureLog").textContent = "";
 
   const params = {
-    keyword: document.getElementById('paramKeyword')?.value || '',
-    user_id: document.getElementById('paramUserId')?.value || '',
-    member_id: document.getElementById('paramUserId')?.value || '',
-    mid: document.getElementById('paramUserId')?.value || '',
-    note_id: document.getElementById('paramNoteId')?.value || '',
-    article_id: document.getElementById('paramNoteId')?.value || '',
-    aid: document.getElementById('paramNoteId')?.value || '',
+    keyword: el("pKeyword")?.value || "", user_id: el("pUserId")?.value || "",
+    member_id: el("pUserId")?.value || "", mid: el("pUserId")?.value || "",
+    note_id: el("pNoteId")?.value || "", article_id: el("pNoteId")?.value || "",
+    aid: el("pNoteId")?.value || "",
   };
 
-  const resultDiv = document.getElementById('collectResult');
-  resultDiv.innerHTML = '<p style="color:#888;">⏳ 采集中...</p>';
-  log(`📦 组合采集 ${site}: ${units.join(', ')}`);
+  function log(msg) {
+    el("captureLog").textContent += msg + "\n";
+    el("captureLog").scrollTop = el("captureLog").scrollHeight;
+  }
+
+  log(`⏳ 采集 ${wizardSite}: ${wizardUnits.join(", ")}`);
 
   try {
-    const res = await api('/api/collect-units', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ site, units, params, sessionName: profile, authMode }),
+    const res = await api("/api/collect-units", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ site: wizardSite, units: wizardUnits, params, sessionName: "" }),
     });
-    if (res.code !== 0) { resultDiv.innerHTML = `<p style="color:red;">❌ ${res.msg}</p>`; return; }
+    if (res.code !== 0) { log("❌ " + res.msg); toast("采集失败", "error"); return; }
 
-    resultDiv.innerHTML = (res.data || []).map(r => {
-      const icon = r.status === 'success' ? '✅' : r.status === 'partial' ? '⚠️' : '❌';
-      const methodIcon = r.method === 'signature' ? '🔵' : r.method === 'html_extract' ? '🟠' : '⚪';
-      const preview = r.data ? JSON.stringify(r.data).slice(0, 200) : '';
-      return `<details style="margin-top:8px;background:#0f172a;padding:10px;border-radius:6px;" ${r.status === 'success' ? 'open' : ''}>
-        <summary style="cursor:pointer;">${icon} ${r.unit} ${methodIcon} ${r.responseTime}ms</summary>
-        <div style="font-size:0.8rem;margin-top:6px;">${r.error ? '<div style="color:#ef4444;">' + r.error + '</div>' : ''}<pre style="white-space:pre-wrap;color:#94a3b8;">${preview}</pre></div>
-      </details>`;
-    }).join('');
-    log('✅ 组合采集完成');
+    el("progressFill").style.width = "100%";
+    log("✅ 采集完成");
+
+    const data = res.data || [];
+    const total = data.length, success = data.filter(r => r.status === "success").length;
+    el("captureResult").innerHTML = `
+      <h3>📊 采集结果（${success}/${total} 成功）</h3>
+      ${data.map(r => {
+        const icon = r.status === "success" ? "✅" : r.status === "partial" ? "⚠️" : "❌";
+        const mIcon = r.method === "signature" ? "🔵" : r.method === "html_extract" ? "🟠" : "⚪";
+        const preview = r.data ? JSON.stringify(r.data).slice(0, 200) : "";
+        return `<details style="margin-top:8px;background:#0f172a;padding:10px;border-radius:6px;" ${r.status === "success" ? "open" : ""}>
+          <summary style="cursor:pointer;">${icon} ${r.unit} ${mIcon} ${r.responseTime}ms</summary>
+          <div style="font-size:0.8rem;margin-top:6px;">${r.error ? '<div style="color:#ef4444;">' + r.error + '</div>' : ''}<pre style="white-space:pre-wrap;color:#94a3b8;">${preview}</pre></div>
+        </details>`;
+      }).join("")}
+    `;
+    el("captureResult").style.display = "block";
+    toast(`采集完成: ${success}/${total}`, "success");
   } catch (e) {
-    resultDiv.innerHTML = `<p style="color:red;">❌ ${e.message}</p>`;
+    log("❌ " + e.message);
+    toast("采集失败", "error");
   }
+  btn.disabled = false; btn.textContent = "🚀 开始采集";
 }
 
-// ── Tab 2: 会话管理 ──
+// ── 会话管理 ──
 
 async function loadSessionCards() {
-  try {
-    const data = await api('/api/sessions');
-    const container = document.getElementById('sessionCards');
-    const list = data.data || [];
-    if (list.length === 0) { container.innerHTML = '<p style="color:#888;">暂无已存会话</p>'; return; }
-    container.innerHTML = list.map(s => {
-      const valid = s.status === 'valid';
-      const border = valid ? '#22c55e' : '#ef4444';
-      return `<div class="card" style="border-left:4px solid ${border};">
-        <div class="card-title">${s.name}</div>
-        <div class="card-body">
-          <span>Cookie: ${s.cookies}</span>
-          <span>状态: ${valid ? '✅ 有效' : '❌ 过期'}</span>
-          <span>创建: ${s.createdAt ? new Date(s.createdAt).toLocaleString() : '未知'}</span>
-        </div>
-        <div class="card-actions">
-          <button onclick="deleteSession('${s.name}')">🗑 删除</button>
-        </div>
-      </div>`;
-    }).join('');
-  } catch { document.getElementById('sessionCards').innerHTML = '<p>加载失败</p>'; }
+  const res = await api("/api/sessions");
+  const list = res.data || [];
+  const c = el("sessionCards");
+  if (list.length === 0) { c.innerHTML = '<p style="color:#888;">暂无已存会话</p>'; return; }
+  c.innerHTML = list.map(s => {
+    const v = s.status === "valid";
+    return `<div class="card" style="border-left:4px solid ${v ? '#22c55e' : '#ef4444'};">
+      <div class="card-title">${s.name}</div>
+      <div class="card-body">
+        <span>🍪 ${s.cookies} cookies</span>
+        <span>${v ? '✅ 有效' : '❌ 过期'}</span>
+        <span>📅 ${s.createdAt ? new Date(s.createdAt).toLocaleString() : '未知'}</span>
+      </div>
+      <div style="margin-top:8px;">
+        <button class="secondary" onclick="deleteSession('${s.name}')">🗑 删除</button>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 async function deleteSession(name) {
-  if (!confirm(`确认删除会话 ${name}？`)) return;
-  try {
-    const data = await api(`/api/sessions/${name}`, { method: 'DELETE' });
-    log(`🗑 ${data.msg}`);
-    await loadSessionCards();
-  } catch { log('❌ 删除失败'); }
+  if (!confirm("删除会话 " + name + "？")) return;
+  await api("/api/sessions/" + name, { method: "DELETE" });
+  toast("已删除 " + name, "success");
+  loadSessionCards();
 }
 
-// ── Tab 3: 结果分析 ──
+// ── 结果档案 ──
 
-async function loadResultFiles() {
-  try {
-    const res = await api('/api/results');
-    const list = res.data || [];
-    const select = document.getElementById('resultSelect');
-    const container = document.getElementById('resultDetail');
-    if (list.length === 0) {
-      select.innerHTML = '<option>-- 暂无采集结果 --</option>';
-      container.innerHTML = '<p style="color:#888;">暂无采集结果，请先执行采集任务</p>';
-      return;
-    }
-    select.innerHTML = '<option value="">-- 选择结果文件 --</option>' +
-      list.map(f => `<option value="${f.filename}">${f.filename.split('/')[0]} / ${f.filename.split('/')[1]} (${(f.size/1024).toFixed(1)}KB)</option>`).join('');
-    select.onchange = () => loadResultDetail(select.value);
-    // 清理之前可能残留的 onchange
-  } catch { document.getElementById('resultDetail').innerHTML = '<p style="color:red;">❌ 加载列表失败</p>'; }
+let selectedResult = "";
+
+async function loadResultFilesNew() {
+  const res = await api("/api/results");
+  const list = res.data || [];
+  const sel = el("resultSelect");
+  if (list.length === 0) { sel.innerHTML = "<option>暂无结果</option>"; return; }
+  sel.innerHTML = "<option value=''>-- 选择文件 --</option>" +
+    list.map(f => `<option value="${f.filename}">${f.filename.split("/")[1] || f.filename}</option>`).join("");
+  sel.onchange = () => loadResultDetail(sel.value);
+  if (selectedResult) { sel.value = selectedResult; loadResultDetail(selectedResult); }
 }
 
 async function loadResultDetail(filename) {
-  if (!filename) { document.getElementById('resultDetail').innerHTML = ''; return; }
-  const container = document.getElementById('resultDetail');
-  container.innerHTML = '<p style="color:#888;">⏳ 加载中...</p>';
+  if (!filename) { el("resultDetail").innerHTML = '<p style="color:#888;">选择文件后查看详情</p>'; return; }
+  selectedResult = filename;
+  el("resultDetail").innerHTML = '<p style="color:#888;">⏳ 加载中...</p>';
   try {
-    const res = await api('/api/results/' + encodeURIComponent(filename));
-    const result = res.data;
-    const url = result.targetUrl || result.url || '未知';
-    const traceId = result.traceId || '—';
-    const createdAt = result.capturedAt || result.finishedAt ? new Date(result.finishedAt || result.capturedAt).toLocaleString() : '—';
-    const statusCode = result.statusCode || '—';
+    const res = await api("/api/results/" + encodeURIComponent(filename));
+    const d = res.data || {};
+    const url = d.targetUrl || d.url || "未知";
+    const time = d.finishedAt || d.capturedAt || "";
+    const reqs = d.networkRequests || [];
+    const apis = d.analysis?.apiRequests || [];
 
-    const hasClassification = result.classification;
-    const core = result.classification?.core || {};
-    const secondary = result.classification?.secondary || {};
-    const apiEndpoints = core.apiEndpoints || result.analysis?.apiRequests || [];
-    const authTokens = core.authTokens || {};
-    const antiCrawl = core.antiCrawlDefenses || [];
-    const allReqs = secondary.allCapturedRequests || result.networkRequests || [];
-    const hiddenFields = secondary.hiddenFields || [];
-
-    let html = `<div class="card" style="margin-bottom:12px;">
-      <div class="card-title">${url}</div>
-      <div class="card-body">
-        <span>Trace: ${traceId}</span>
-        <span>采集时间: ${createdAt}</span>
-        <span>请求数: ${allReqs.length}</span>
-        <span>API端点: ${apiEndpoints.length}</span>
-        ${statusCode !== '—' ? `<span>状态码: ${statusCode}</span>` : ''}
+    el("resultDetail").innerHTML = `
+      <div class="card" style="margin-bottom:12px;">
+        <div class="card-title" style="word-break:break-all;">${url}</div>
+        <div class="card-body">
+          <div>⏱ ${d.responseTime || (d.finishedAt - d.startedAt) || "?"}ms</div>
+          <div>📡 ${reqs.length} 请求 | 🔌 ${apis.length} API</div>
+          ${time ? '<div>📅 ' + new Date(time).toLocaleString() + '</div>' : ''}
+        </div>
       </div>
-    </div>`;
-
-    // 核心信息
-    if (hasClassification) html += '<details open><summary style="cursor:pointer;font-weight:bold;margin:8px 0;">🔑 核心信息</summary>';
-    if (apiEndpoints.length > 0) {
-      html += '<table style="width:100%;border-collapse:collapse;font-size:0.8rem;">';
-      html += '<tr style="background:#334155;"><th style="padding:4px;">方法</th><th style="padding:4px;">URL</th><th style="padding:4px;">状态</th></tr>';
-      apiEndpoints.slice(0, 30).forEach(r => {
-        html += `<tr style="border-bottom:1px solid #334155;"><td style="padding:4px;">${r.method}</td><td style="padding:4px;max-width:400px;overflow:hidden;text-overflow:ellipsis;">${r.url}</td><td style="padding:4px;">${r.statusCode}</td></tr>`;
-      });
-      if (apiEndpoints.length > 30) html += '<tr><td colspan="3" style="padding:4px;color:#888;">仅展示前 30 条</td></tr>';
-      html += '</table>';
-    }
-    if (Object.keys(authTokens).length > 0) {
-      html += '<h4 style="margin:8px 0 4px;">鉴权令牌</h4>';
-      Object.entries(authTokens).forEach(([k, v]) => {
-        const masked = typeof v === 'string' && v.length > 12 ? v.slice(0,6) + '****' + v.slice(-4) : v;
-        html += `<div style="font-size:0.8rem;padding:2px 0;"><code>${k}</code>: ${masked}</div>`;
-      });
-    }
-    if (antiCrawl.length > 0) {
-      html += '<h4 style="margin:8px 0 4px;">反爬检测</h4>';
-      antiCrawl.forEach(a => { html += `<div style="font-size:0.8rem;padding:2px 0;">${a.severity === 'high' ? '🔴' : '🟡'} ${a.category}</div>`; });
-    }
-    if (hasClassification) html += '</details>';
-
-    // 次要信息
-    if (hasClassification) {
-      html += '<details style="margin-top:8px;"><summary style="cursor:pointer;font-weight:bold;">📄 次要信息</summary>';
-      html += `<div style="font-size:0.8rem;padding:4px 0;">全量请求: ${allReqs.length} | 隐藏字段: ${hiddenFields.length}</div>`;
-      if (hiddenFields.length > 0) {
-        hiddenFields.forEach(f => { html += `<div style="font-size:0.8rem;">${f.name}: ${f.value || ''}</div>`; });
-      }
-      html += '</details>';
-    }
-
-    // 下载按钮
-    html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">';
-    html += `<button onclick="downloadFile('${filename}','json')">📥 JSON</button>`;
-    html += '</div>';
-
-    container.innerHTML = html;
-  } catch (e) {
-    container.innerHTML = `<p style="color:red;">❌ 加载失败: ${e.message}</p>`;
-  }
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="downloadResult('${filename}','json')">📥 JSON</button>
+        <button class="secondary" onclick="showStub('${filename}')">📜 生成桩代码</button>
+      </div>
+      ${apis.length > 0 ? '<h4 style="margin-top:12px;">🔌 API 端点</h4><table><tr><th>方法</th><th>路径</th><th>状态</th></tr>' +
+        apis.slice(0, 20).map(a => {
+          try { const u = new URL(a.url); return `<tr><td>${a.method}</td><td>${u.pathname}</td><td>${a.statusCode}</td></tr>`; }
+          catch { return ""; }
+        }).join("") + '</table>' : ''}
+      ${d.storage?.cookies?.length ? '<h4 style="margin-top:12px;">🍪 Cookie 摘要</h4>' +
+        d.storage.cookies.filter(c => ["session", "token", "sid"].some(k => c.name.toLowerCase().includes(k)))
+          .map(c => `<div style="font-size:0.8rem;">${c.name}: ${(c.value + "").slice(0,30)}...</div>`).join("") : ''}
+    `;
+  } catch { el("resultDetail").innerHTML = '<p style="color:red;">❌ 加载失败</p>'; }
 }
 
-async function downloadFile(filename, format) {
-  const res = await api('/api/results/' + encodeURIComponent(filename));
-  const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename.replace('/', '-');
-  a.click();
+async function downloadResult(filename, fmt) {
+  const res = await api("/api/results/" + encodeURIComponent(filename));
+  const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = filename.replace(/[/\\]/g, "-"); a.click();
+  URL.revokeObjectURL(a.href);
 }
 
-// ── Tab 4: 服务状态 ──
+async function showStub(filename) {
+  const res = await api("/api/results/" + encodeURIComponent(filename));
+  const d = res.data || {};
+  // 检测是否有 WBI 签名数据
+  const ls = d.storage?.localStorage || {};
+  const hasWbi = ls.wbi_img_url || ls.wbi_sub_url;
+  const code = hasWbi
+    ? `# 从 localStorage 提取 WBI 密钥\nIMG_KEY = "${(ls.wbi_img_url || "").slice(0,40)}"\nSUB_KEY = "${(ls.wbi_sub_url || "").slice(0,40)}"\n# 使用 npm run gen-stub 生成完整桩代码`
+    : "# 未检测到签名数据\n# 请选择支持签名的采集结果文件";
+  el("stubCode").textContent = code;
+  el("stubModal").style.display = "flex";
+}
+
+function closeModal() { el("stubModal").style.display = "none"; }
+
+function copyStub() {
+  navigator.clipboard.writeText(el("stubCode").textContent);
+  toast("已复制", "success");
+}
+
+// ── 系统状态 ──
 
 async function fetchHealth() {
   try {
-    const data = await api('/health');
-    const mb = (b) => (b / 1024 / 1024).toFixed(1) + ' MB';
-    document.getElementById('healthDisplay').innerHTML = `
-      <table style="width:100%; border-collapse:collapse;">
-        <tr><td style="padding:4px 8px;font-weight:bold;">状态</td><td>✅ 运行中</td></tr>
-        <tr><td style="padding:4px 8px;font-weight:bold;">版本</td><td>${data.version}</td></tr>
-        <tr><td style="padding:4px 8px;font-weight:bold;">运行时间</td><td>${Math.floor(data.uptime / 60)} 分 ${Math.floor(data.uptime % 60)} 秒</td></tr>
-        <tr><td style="padding:4px 8px;font-weight:bold;">平台</td><td>${data.platform}</td></tr>
-        <tr><td style="padding:4px 8px;font-weight:bold;">堆内存</td><td>${mb(data.memoryUsage.heapUsed)} / ${mb(data.memoryUsage.heapTotal)}</td></tr>
-        <tr><td style="padding:4px 8px;font-weight:bold;">RSS</td><td>${mb(data.memoryUsage.rss)}</td></tr>
-        <tr><td style="padding:4px 8px;font-weight:bold;">已存会话</td><td>${data.profileCount}</td></tr>
-        <tr><td style="padding:4px 8px;font-weight:bold;">活跃浏览器</td><td>${data.activeBrowsers}</td></tr>
-      </table>`;
-  } catch { document.getElementById('healthDisplay').innerHTML = '<p style="color:red;">❌ 无法获取服务状态</p>'; }
+    const d = await api("/health");
+    const mb = b => (b / 1024 / 1024).toFixed(1) + " MB";
+    el("healthDisplay").innerHTML = `
+      <div class="stat-cards">
+        <div class="stat-card"><div class="num">${Math.floor(d.uptime / 60)}</div><div class="label">运行分钟</div></div>
+        <div class="stat-card"><div class="num">${mb(d.memoryUsage?.rss || 0)}</div><div class="label">RSS 内存</div></div>
+        <div class="stat-card"><div class="num">${d.profileCount || 0}</div><div class="label">已存会话</div></div>
+      </div>
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">⚙️ 详细</div>
+        <div class="card-body">
+          <div>版本: ${d.version}</div>
+          <div>平台: ${d.platform}</div>
+          <div>堆内存: ${mb(d.memoryUsage?.heapUsed || 0)} / ${mb(d.memoryUsage?.heapTotal || 0)}</div>
+          <div>活跃浏览器: ${d.activeBrowsers || 0}</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">🤖 已注册爬虫</div>
+        <div class="card-body">
+          <div>🔴 小红书（xiaohongshu.com）— 5 verified</div>
+          <div>🟠 知乎（zhihu.com）— 11 verified</div>
+          <div>🔵 B站（bilibili.com）— 4 verified</div>
+        </div>
+      </div>
+    `;
+  } catch { el("healthDisplay").innerHTML = '<p style="color:red;">❌ 无法获取系统状态</p>'; }
 }

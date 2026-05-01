@@ -7,62 +7,108 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <h1>🌐 WebHarvester 可视化面板</h1>
-  <div class="tabs" id="tabNav">
-    <button class="tab active" onclick="switchTab('tab-collect', this)">采集任务</button>
-    <button class="tab" onclick="switchTab('tab-sessions', this)">会话管理</button>
-    <button class="tab" onclick="switchTab('tab-analyze', this)">结果分析</button>
-    <button class="tab" onclick="switchTab('tab-health', this)">服务状态</button>
+  <div id="app">
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <div class="sidebar-header">🌐 WebHarvester</div>
+      <div class="sidebar-nav">
+        <button class="nav-item active" data-view="dashboard">🏠 仪表盘</button>
+        <button class="nav-item" data-view="capture">📥 采集中心</button>
+        <button class="nav-item" data-view="sessions">💬 会话管理</button>
+        <button class="nav-item" data-view="results">📊 结果档案</button>
+        <button class="nav-item" data-view="system">⚙️ 系统状态</button>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="main">
+      <!-- Dashboard -->
+      <div id="view-dashboard" class="view active">
+        <h2>🏠 仪表盘</h2>
+        <div class="stat-cards" id="statCards"></div>
+        <h3>最近采集</h3>
+        <div id="recentResults"><p style="color:#888;">暂无数据</p></div>
+        <button onclick="switchView('capture')" style="margin-top:12px;">🚀 开始新采集</button>
+      </div>
+
+      <!-- Capture Hub -->
+      <div id="view-capture" class="view">
+        <h2>📥 采集中心</h2>
+        <div class="wizard">
+          <div class="wizard-steps" id="wizardSteps">
+            <span class="step active" data-step="1">1. 选择站点</span>
+            <span class="step" data-step="2">2. 选择内容</span>
+            <span class="step" data-step="3">3. 填写参数</span>
+          </div>
+          <div class="wizard-body">
+            <!-- Step 1: Site Selection -->
+            <div id="wizardStep1" class="wizard-step-content active">
+              <div class="site-cards" id="siteCards"></div>
+              <button onclick="wizardNext()" style="margin-top:12px;">下一步 →</button>
+            </div>
+            <!-- Step 2: Unit Selection -->
+            <div id="wizardStep2" class="wizard-step-content">
+              <div class="card-grid" id="unitCards"></div>
+              <button onclick="wizardPrev()">← 上一步</button>
+              <button onclick="wizardNext()">下一步 →</button>
+            </div>
+            <!-- Step 3: Params + Execute -->
+            <div id="wizardStep3" class="wizard-step-content">
+              <div id="paramFields"></div>
+              <button onclick="wizardPrev()">← 上一步</button>
+              <button onclick="executeCapture()" id="captureBtn">🚀 开始采集</button>
+            </div>
+          </div>
+        </div>
+        <div id="captureProgress" style="display:none;">
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          <pre id="captureLog" class="log-box" style="height:200px;"></pre>
+        </div>
+        <div id="captureResult" style="display:none;"></div>
+      </div>
+
+      <!-- Sessions -->
+      <div id="view-sessions" class="view">
+        <h2>💬 会话管理</h2>
+        <button onclick="loadSessionCards()">🔄 刷新</button>
+        <div id="sessionCards" class="card-grid"></div>
+      </div>
+
+      <!-- Results -->
+      <div id="view-results" class="view">
+        <h2>📊 结果档案</h2>
+        <div class="results-layout">
+          <div class="results-list">
+            <select id="resultSelect" style="width:100%;margin-bottom:8px;"><option>-- 加载中 --</option></select>
+            <div id="resultList"></div>
+          </div>
+          <div class="results-detail" id="resultDetail">
+            <p style="color:#888;">选择文件后查看详情</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- System -->
+      <div id="view-system" class="view">
+        <h2>⚙️ 系统状态</h2>
+        <div id="healthDisplay"><p>加载中...</p></div>
+      </div>
+    </main>
   </div>
 
-  <!-- Tab 1: 采集任务 -->
-  <div id="tab-collect" class="tab-content active">
-    <h2>📌 采集任务</h2>
-    <div class="form-row">
-      <label>站点：</label>
-      <select id="collectSite" onchange="onSiteChange()">
-        <option value="xiaohongshu">小红书</option>
-        <option value="zhihu">知乎</option>
-        <option value="bilibili">B站</option>
-      </select>
-      <label>会话：</label>
-      <select id="profileSelect"><option value="">不使用登录状态</option></select>
-      <label>认证：</label>
-      <select id="authModeSelect"><option value="logged_in">已登录</option><option value="guest">游客</option></select>
+  <!-- Stub Modal -->
+  <div id="stubModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeModal()">
+    <div class="modal-content" style="width:600px;max-width:90vw;">
+      <h3>📜 桩代码</h3>
+      <pre id="stubCode" style="background:#0f172a;padding:12px;border-radius:4px;max-height:400px;overflow:auto;font-size:0.8rem;"></pre>
+      <button onclick="copyStub()">📋 复制</button>
+      <button onclick="closeModal()">关闭</button>
     </div>
-    <h3>选择要采集的内容</h3>
-    <div id="unitCheckboxes" class="card-grid"></div>
-    <div id="paramInputs" style="margin-top:12px;"></div>
-    <button onclick="startUnitCollect()" style="margin-top:8px;">🚀 开始组合采集</button>
-    <h3>结果</h3>
-    <div id="collectResult"></div>
   </div>
 
-  <!-- Tab 2: 会话管理 -->
-  <div id="tab-sessions" class="tab-content">
-    <h2>🔐 会话管理</h2>
-    <button onclick="loadSessionCards()">🔄 刷新</button>
-    <div id="sessionCards" class="card-grid"></div>
-  </div>
-
-  <!-- Tab 3: 结果分析 -->
-  <div id="tab-analyze" class="tab-content">
-    <h2>📊 结果分析</h2>
-    <div class="form-row">
-      <select id="resultSelect" style="flex:1;"><option value="">-- 选择结果文件 --</option></select>
-      <button onclick="loadResultFiles()">🔄 刷新</button>
-    </div>
-    <div id="resultDetail"><p style="color:#888;">选择文件后自动加载</p></div>
-  </div>
-
-  <!-- Tab 4: 服务状态 -->
-  <div id="tab-health" class="tab-content">
-    <h2>📊 服务状态</h2>
-    <div id="healthDisplay"><p>加载中...</p></div>
-    <p><button onclick="fetchHealth()">🔄 刷新</button> 每 10 秒自动刷新</p>
-  </div>
-
-  <pre id="logBox" class="log-box"></pre>
   <script src="/api.js"></script>
 </body>
 </html>
