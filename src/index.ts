@@ -299,33 +299,31 @@ async function handleCrawlerSiteAction(action: import("./cli/main-menu").MenuAct
           }
         }
       } else if (selected.startsWith("fb:")) {
-        // 页面提取（浏览器引擎）
+        // 兜底方案 - 通过 XhsCrawler.fetchPageData
         const fbName = selected.slice(3);
-        const fb = XhsFallbackEndpoints.find((e: any) => e.name === fbName);
-        if (!fb) { console.log("❌ 未知兜底端点"); return; }
-        const { params: userParams } = await inq.prompt([{ type: "input", name: "params", message: "请输入 URL 参数（如 keyword=原神）：" }]);
-        const url = fb.pageUrl.replace(/\{(\w+)\}/g, (_: string, k: string) => {
-          const m = userParams.match(new RegExp(`${k}=([^&]+)`));
-          return m ? encodeURIComponent(decodeURIComponent(m[1])) : k;
+        const { params: userParams } = await inq.prompt([{ type: "input", name: "params", message: "请输入参数（如 keyword=原神）：" }]);
+        const paramsRecord: Record<string, string> = {};
+        userParams.split("&").filter(Boolean).forEach((pair: string) => {
+          const [k, ...vs] = pair.split("=");
+          if (k) paramsRecord[k] = decodeURIComponent(vs.join("="));
         });
-        console.log(`\n⏳ 正在通过浏览器打开: ${url}`);
-        const PlaywrightAdapter = (await import("./adapters/PlaywrightAdapter")).PlaywrightAdapter;
-        const br = new PlaywrightAdapter(logger);
-        await br.launch(url, session ? {
-          cookies: session.cookies.map(c => ({ name: c.name, value: c.value, domain: c.domain ?? ".xiaohongshu.com", path: "/", httpOnly: false, secure: false, sameSite: "Lax" as const })),
-          localStorage: session.localStorage ?? {},
-          sessionStorage: {}, createdAt: Date.now(), lastUsedAt: Date.now(),
-        } : undefined);
-        const extracted = await br.executeScript<string>(fb.extractScript).catch(() => "{}");
-        await br.close();
-        const outDir = path.resolve("output", crawler.name);
-        await fs.mkdir(outDir, { recursive: true });
-        const outFile = path.join(outDir, `${crawler.name}-${fbName}-${Date.now()}.json`);
-        const result = { url, source: "html-extract", endpoint: fbName, data: extracted, capturedAt: new Date().toISOString() };
-        await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
-        console.log(`\n✅ ${crawler.name} - ${fbName} (页面提取)`);
-        console.log(`   已保存: ${outFile}`);
-        console.log(`   数据预览: ${extracted.slice(0, 500)}`);
+        try {
+          const result = await (crawler as XhsCrawler).fetchPageData(fbName, paramsRecord, session);
+          const outDir = path.resolve("output", crawler.name);
+          await fs.mkdir(outDir, { recursive: true });
+          const outFile = path.join(outDir, `${crawler.name}-${fbName}-${Date.now()}.json`);
+          await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
+          console.log(`\n✅ ${crawler.name} - ${fbName} (页面提取)`);
+          console.log(`   耗时: ${result.responseTime}ms`);
+          console.log(`   已保存: ${outFile}`);
+          try {
+            const parsed = JSON.parse(result.body);
+            console.log(`   提取数据预览: ${JSON.stringify(parsed).slice(0, 500)}`);
+          } catch { console.log(`   原始数据: ${result.body.slice(0, 300)}`); }
+        } catch (e: any) {
+          logger.error("页面提取失败", { err: e.message });
+          console.log("❌ 页面提取失败:", e.message);
+        }
       }
       return;
     }

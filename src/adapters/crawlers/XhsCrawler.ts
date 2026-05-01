@@ -2,6 +2,8 @@ import fetch from "node-fetch";
 import { ISiteCrawler, CrawlerSession, PageData, FetchOptions } from "../../core/ports/ISiteCrawler";
 import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
 import { generateXsHeader } from "../../utils/crypto/xhs-signer";
+import { PlaywrightAdapter } from "../PlaywrightAdapter";
+import { ConsoleLogger } from "../ConsoleLogger";
 
 const XHS_DOMAIN = "xiaohongshu.com";
 const XHS_API_HOST = "edith.xiaohongshu.com";
@@ -29,6 +31,26 @@ export interface XhsEndpointDef {
   status?: "verified" | "risk_ctrl" | "sig_pending";
 }
 
+/** 兜底方案端点：通过浏览器引擎从 HTML __INITIAL_STATE__ 提取数据。 */
+export interface XhsFallbackDef {
+  name: string;
+  /** 页面 URL 模板。{keyword}/{user_id}/{note_id} 会在 fetchApi 时替换。 */
+  pageUrl: string;
+  /** 页面上提取初始状态的 eval 脚本。 */
+  extractScript: string;
+  /** 从 __INITIAL_STATE__ 到目标数据的 JSON 路径，如 "note.noteDetailMap" */
+  dataPath: string;
+}
+
+export const XhsFallbackEndpoints: ReadonlyArray<XhsFallbackDef> = [
+  { name: "搜索笔记", pageUrl: "https://www.xiaohongshu.com/search_result?keyword={keyword}",
+    extractScript: "__INITIAL_STATE__", dataPath: "search.notes" },
+  { name: "用户主页", pageUrl: "https://www.xiaohongshu.com/user/profile/{user_id}",
+    extractScript: "__INITIAL_STATE__", dataPath: "user.userInfo" },
+  { name: "笔记详情", pageUrl: "https://www.xiaohongshu.com/explore/{note_id}",
+    extractScript: "__INITIAL_STATE__", dataPath: "note.noteDetailMap" },
+] as const;
+
 export const XhsApiEndpoints: ReadonlyArray<XhsEndpointDef> = [
   // ── ✅ 已验证可用（签名通过，code=0/1000） ──
   { name: "用户信息", path: "/api/sns/web/v2/user/me", status: "verified" },
@@ -48,34 +70,6 @@ export const XhsApiEndpoints: ReadonlyArray<XhsEndpointDef> = [
     status: "sig_pending" },
   { name: "搜索筛选", path: "/api/sns/web/v1/search/filter", params: "keyword=%E5%8E%9F%E7%A5%9E&search_id={search_id}", status: "sig_pending" },
   { name: "收藏列表", path: "/api/sns/web/v1/board/user", params: "user_id=PLACEHOLDER&num=15&page=1", status: "sig_pending" },
-] as const;
-
-/**
- * 兜底方案端点（通过浏览器引擎提取，不走特化签名）。
- * 签名算法无法通过时，通过 Page.evaluate 从 HTML 的 __INITIAL_STATE__ 提取数据。
- */
-export const XhsFallbackEndpoints: ReadonlyArray<{
-  name: string;
-  /** 需要打开的页面 URL 模板。用 {} 表示参数占位。 */
-  pageUrl: string;
-  /** 页面加载后用于提取数据的 JS 表达式。 */
-  extractScript: string;
-}> = [
-  {
-    name: "搜索笔记",
-    pageUrl: "https://www.xiaohongshu.com/search_result?keyword={keyword}",
-    extractScript: "JSON.parse(document.querySelector('script:contains(\"__INITIAL_STATE__\")')?.textContent?.replace('window.__INITIAL_STATE__=','')?.split(';')[0] || '{}')",
-  },
-  {
-    name: "用户主页",
-    pageUrl: "https://www.xiaohongshu.com/user/profile/{user_id}",
-    extractScript: "JSON.parse(document.querySelector('script:contains(\"__INITIAL_STATE__\")')?.textContent?.replace('window.__INITIAL_STATE__=','')?.split(';')[0] || '{}')",
-  },
-  {
-    name: "笔记详情",
-    pageUrl: "https://www.xiaohongshu.com/discovery/item/{note_id}",
-    extractScript: "JSON.parse(document.querySelector('script:contains(\"__INITIAL_STATE__\")')?.textContent?.replace('window.__INITIAL_STATE__=','')?.split(';')[0] || '{}')",
-  },
 ] as const;
 
 /**
@@ -199,6 +193,71 @@ export class XhsCrawler implements ISiteCrawler {
       }
     }
     return result;
+  }
+
+  /**
+   * 兜底方案：通过浏览器引擎从 HTML __INITIAL_STATE__ 提取数据。
+   * @param endpointName XhsFallbackEndpoints 中的 name。
+   * @param params 页面 URL 参数（keyword / user_id / note_id）。
+   * @param session 可选登录态。
+   */
+  async fetchPageData(endpointName: string, params: Record<string, string>, session?: CrawlerSession): Promise<PageData> {
+    const fb = XhsFallbackEndpoints.find((e) => e.name === endpointName);
+    if (!fb) throw new Error(`未知兜底端点: ${endpointName}`);
+
+    const url = fb.pageUrl.replace(/\{(\w+)\}/g, (_, k: string) => encodeURIComponent(params[k] || k));
+
+    const logger = new ConsoleLogger("info");
+    const browser = new PlaywrightAdapter(logger);
+    const sessionState = session ? {
+      cookies: session.cookies.map((c) => ({
+        name: c.name, value: c.value, domain: c.domain ?? ".xiaohongshu.com",
+        path: "/", httpOnly: false, secure: false, sameSite: "Lax" as const,
+      })),
+      localStorage: session.localStorage ?? {},
+      sessionStorage: {},
+      createdAt: Date.now(),
+      lastUsedAt: Date.now(),
+    } : undefined;
+
+    try {
+      const startTime = Date.now();
+      await browser.launch(url, sessionState);
+      await new Promise((r) => setTimeout(r, 3000)); // 等待 SPA 渲染
+
+      const rawExtract = `(() => {
+        const scripts = document.querySelectorAll('script');
+        for (const s of scripts) {
+          const t = s.textContent || '';
+          if (t.includes('__INITIAL_STATE__')) {
+            const json = t.replace('window.__INITIAL_STATE__=', '').split(';')[0];
+            try { return JSON.parse(json); } catch(e) { return {}; }
+          }
+        }
+        return {};
+      })()`;
+
+      const initState = await browser.executeScript<Record<string, any>>(rawExtract);
+
+      // 按 dataPath 提取子数据（如 "search.notes" → initState.search.notes）
+      const keys = fb.dataPath.split(".");
+      let data: any = initState;
+      for (const k of keys) {
+        if (data && typeof data === "object") data = data[k];
+        else { data = null; break; }
+      }
+
+      const finishTime = Date.now();
+      const result: PageData = {
+        url, statusCode: 200, body: JSON.stringify(data ?? initState),
+        headers: { "content-type": "application/json; charset=utf-8" },
+        responseTime: finishTime - (startTime ?? finishTime),
+        capturedAt: new Date().toISOString(),
+      };
+      return result;
+    } finally {
+      await browser.close();
+    }
   }
 }
 
