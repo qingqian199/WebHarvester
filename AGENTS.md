@@ -17,3 +17,21 @@
 
 ## node-fetch in CJS
 - Dynamic `const { default: fetch } = await import("node-fetch")` does NOT work in CommonJS mode. Use top-level `import fetch from "node-fetch"` (with `esModuleInterop: true` in tsconfig) instead.
+
+## Cross-Cutting: Source Identity Tags
+- All collected units carry a `source` metadata tag (`bilibili_source`, `zhihu_source`, `xh_source`). This tag is used in CLI (`index.ts`) for display grouping and in downstream processing pipelines.
+- When adding a new crawler, define a new source identity constant and use it consistently in `ContentUnit` metadata AND CLI display logic. Missing the tag causes the unit to appear in a "unknown source" catch-all group.
+
+## TikTok Network Blocking
+- TikTok blocks Node.js/Server IP ranges at the TCP level (`connect ETIMEDOUT`), regardless of signature correctness. Even correct X-Bogus headers won't help if the request originates from a data center IP.
+- `HarvesterService` wraps `CrawlerDispatcher.fetch()` in try-catch so that TCP-level failures fall through to `LightHttpEngine` → `PlaywrightAdapter` (browser). This is the only reliable path for TikTok.
+- The `tiktok-signature` npm package works via browser Puppeteer, but requires `PUPPETEER_EXECUTABLE_PATH` pointing to Playwright's Chromium binary.
+
+## BodyTruncationMiddleware
+- JSON responses (`Content-Type: application/json`) must NEVER be body-truncated. Truncating at 50KB/200KB mid-JSON produces invalid JSON that fails `JSON.parse()`.
+- The middleware checks `Content-Type` header and skips truncation for `application/json`. Non-JSON responses (HTML, text) are truncated at 200KB.
+
+## Xiaohongshu INITIAL_STATE Safe Extraction
+- `window.__INITIAL_STATE__` contains circular references (property `'sub'` closes the circle). Direct access or `JSON.stringify` on it always fails.
+- The safe pattern: use string-path navigation (`get(obj, 'note.noteDetailMap')`) with null checks at every path segment. NEVER assign a deep sub-object to a variable — use `getStr(noteObj, 'key.user.userId')` that navigates one segment at a time.
+- Fallback order: browser-side flat extraction → `page.content()` regex extraction → return `{}`.

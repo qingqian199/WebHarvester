@@ -1,12 +1,10 @@
-import fetch from "node-fetch";
-import { ISiteCrawler, CrawlerSession, PageData, FetchOptions } from "../../core/ports/ISiteCrawler";
-import { RealisticFingerprintProvider } from "../RealisticFingerprintProvider";
+import { CrawlerSession, PageData, FetchOptions } from "../../core/ports/ISiteCrawler";
+import { IProxyProvider } from "../../core/ports/IProxyProvider";
 import { generateZse96, generateApiVersion } from "../../utils/crypto/zhihu-signer";
-import { PlaywrightAdapter } from "../PlaywrightAdapter";
-import { ConsoleLogger } from "../ConsoleLogger";
 import { UnitResult } from "../../core/models/ContentUnit";
 import { resolveZhihuUrl } from "../../utils/url-resolver";
 import { buildBrowserHeaders } from "../../utils/browser-env";
+import { BaseCrawler } from "./BaseCrawler";
 
 export const ZhihuFallbackEndpoints: ReadonlyArray<{
   name: string; pageUrl: string; dataPath: string;
@@ -47,16 +45,21 @@ export const ZhihuApiEndpoints: ReadonlyArray<ZhihuEndpointDef> = [
   // 🔶 待验证
   { name: "文章评论", path: "/api/v4/comment_v5/articles/{article_id}/root_comment", params: "order_by=score&limit=5", status: "sig_pending" },
   { name: "评论配置", path: "/api/v4/comment_v5/articles/{article_id}/config", status: "sig_pending" },
+
+  // 回答评论
+  { name: "回答评论", path: "/api/v4/answers/{answer_id}/comments", params: "limit=20&cursor={cursor}", status: "sig_pending" },
+  { name: "回答子回复", path: "/api/v4/comments/{comment_id}/child_comments", params: "limit=20&cursor={cursor}", status: "sig_pending" },
 ];
 
 /**
  * 知乎（zhihu.com）特化爬虫。
  * 使用 x-zse-96 签名访问 API。
  */
-export class ZhihuCrawler implements ISiteCrawler {
+export class ZhihuCrawler extends BaseCrawler {
   readonly name = "zhihu";
   readonly domain = ZHIHU_DOMAIN;
-  private readonly fp = new RealisticFingerprintProvider();
+
+  constructor(proxyProvider?: IProxyProvider) { super("zhihu", proxyProvider); }
 
   matches(url: string): boolean {
     try {
@@ -70,40 +73,23 @@ export class ZhihuCrawler implements ISiteCrawler {
   async fetch(url: string, session?: CrawlerSession, options?: FetchOptions): Promise<PageData> {
     const cookieStr = (session?.cookies ?? []).map((c) => `${c.name}=${c.value}`).join("; ");
     const fp = this.fp.getFingerprint();
-
     const parsed = new URL(url);
-    const pathOnly = parsed.pathname;
-    const queryOnly = parsed.search.replace("?", "");
-
     const baseHeaders = buildBrowserHeaders(fp, "https://www.zhihu.com/");
     const headers: Record<string, string> = {
       ...baseHeaders,
       "Referer": "https://www.zhihu.com/",
       "Origin": "https://www.zhihu.com",
       "x-api-version": generateApiVersion(),
-      "x-zse-96": generateZse96(pathOnly, queryOnly),
+      "x-zse-96": generateZse96(parsed.pathname, parsed.search.replace("?", "")),
       ...(cookieStr ? { Cookie: cookieStr } : {}),
       ...(options?.body ? { "Content-Type": "application/json;charset=UTF-8" } : {}),
     };
-
     const method = options?.method ?? "GET";
+    await this.rateLimiter.throttle();
     const start = Date.now();
-
-    const res = await fetch(url, {
-      method,
-      headers,
-      ...(method === "POST" && options?.body ? { body: options.body } : {}),
-    });
+    const res = await fetch(url, { method, headers, ...(method === "POST" && options?.body ? { body: options.body } : {}) });
     const responseTime = Date.now() - start;
-
-    return {
-      url: res.url,
-      statusCode: res.status,
-      body: await res.text(),
-      headers: Object.fromEntries(res.headers),
-      responseTime,
-      capturedAt: new Date().toISOString(),
-    };
+    return { url: res.url, statusCode: res.status, body: await res.text(), headers: Object.fromEntries(res.headers), responseTime, capturedAt: new Date().toISOString() };
   }
 
   async fetchApi(endpointName: string, params?: Record<string, string>, session?: CrawlerSession): Promise<PageData> {
@@ -121,7 +107,7 @@ export class ZhihuCrawler implements ISiteCrawler {
     // 专栏相关端点走 zhuanlan.zhihu.com
     const baseHost = ep.path.startsWith("/api/articles") ? "zhuanlan.zhihu.com" : "www.zhihu.com";
     const url = `https://${baseHost}${apiPath}${query ? "?" + query : ""}`;
-    return this.fetch(url, session);
+    return this.fetchWithRetry(url, session);
   }
 
   /**
@@ -135,34 +121,18 @@ export class ZhihuCrawler implements ISiteCrawler {
     };
     const url = urlMap[pageType];
     if (!url) throw new Error(`未知页面类型: ${pageType}`);
-
-    const logger = new ConsoleLogger("info");
-    const browser = new PlaywrightAdapter(logger);
-
+    const selector = pageType === "article" ? ".RichText" : undefined;
+    const { browser, startTime } = await this.fetchPageContent(url, session, ".zhihu.com", selector);
     try {
-      const startTime = Date.now();
-      await browser.launch(url, session ? {
-        cookies: session.cookies.map((c) => ({
-          name: c.name, value: c.value, domain: c.domain ?? ".zhihu.com",
-          path: "/", httpOnly: false, secure: false, sameSite: "Lax" as const,
-        })),
-        localStorage: {}, sessionStorage: {}, createdAt: Date.now(), lastUsedAt: Date.now(),
-      } : undefined);
-      await new Promise((r) => setTimeout(r, 3000));
-
+      await browser.executeScript("window.scrollTo(0, " + (200 + Math.floor(Math.random() * 600)) + ")").catch(() => {});
+      await new Promise((r) => setTimeout(r, 500));
       const title = await browser.executeScript<string>("document.title").catch(() => "");
       const bodyText = await browser.executeScript<string>(
         "(() => { const m = document.querySelector('.RichText'); return m ? m.innerText.slice(0,5000) : document.body.innerText.slice(0,5000); })()",
       ).catch(() => "");
-
-      const finishTime = Date.now();
-      return {
-        url, statusCode: 200,
-        body: JSON.stringify({ title, content: bodyText }),
+      return { url, statusCode: 200, body: JSON.stringify({ title, content: bodyText }),
         headers: { "content-type": "application/json;charset=utf-8" },
-        responseTime: finishTime - startTime,
-        capturedAt: new Date().toISOString(),
-      };
+        responseTime: Date.now() - startTime, capturedAt: new Date().toISOString() };
     } finally {
       await browser.close();
     }
@@ -180,11 +150,25 @@ export class ZhihuCrawler implements ISiteCrawler {
       }
     }
     const results: UnitResult[] = [];
-    for (const unit of units) {
+
+    const shuffled = [...units];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    const paused = this.rateLimiter.isPaused;
+    if (paused) this.logger.warn("⏸️ [zhihu] 站点冷却中，后续采集将降级到页面提取");
+
+    for (const unit of shuffled) {
       const start = Date.now();
       try {
         switch (unit) {
           case "zhihu_user_info": {
+            if (this.rateLimiter.isPaused) {
+              results.push({ unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 });
+              break;
+            }
             const r = await this.fetchApi("当前用户", {}, session);
             results.push({ unit, status: "success", data: JSON.parse(r.body), method: "signature", responseTime: r.responseTime });
             break;
@@ -202,9 +186,84 @@ export class ZhihuCrawler implements ISiteCrawler {
             break;
           }
           case "zhihu_hot_search": {
+            if (this.rateLimiter.isPaused) {
+              results.push({ unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 });
+              break;
+            }
             const r = await this.fetchApi("热门搜索", {}, session);
             const d = JSON.parse(r.body);
             results.push({ unit, status: d.code === 0 || r.statusCode === 200 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime });
+            break;
+          }
+          case "zhihu_comments": {
+            const aid = params.answer_id || params.article_id || "";
+            if (!aid) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 answer_id", responseTime: 0 }); break; }
+            const maxPages = Math.min(parseInt(params.max_pages || "3"), 10);
+            let allComments: any[] = [];
+            let totalTime = 0;
+            let cursor = "";
+            for (let page = 0; page < maxPages; page++) {
+              try {
+                const r = await this.fetchApi("回答评论", { answer_id: aid, cursor }, session);
+                const d = JSON.parse(r.body);
+                totalTime += r.responseTime;
+                if (Array.isArray(d.data)) {
+                  allComments = allComments.concat(d.data);
+                  if (d.paging?.is_end) break;
+                  cursor = d.paging?.next || "";
+                } else break;
+              } catch { break; }
+            }
+            results.push({ unit, status: allComments.length > 0 ? "success" : "partial", data: { data: allComments, paging: { totals: allComments.length } }, method: "signature", responseTime: totalTime });
+            break;
+          }
+          case "zhihu_sub_replies": {
+            const aid2 = params.answer_id || "";
+            if (!aid2) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 answer_id", responseTime: 0 }); break; }
+            const root = params.root || "";
+            const maxSub = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
+            if (root) {
+              let allReplies: any[] = [];
+              let totalTime = 0;
+              let cursor = "";
+              for (let page = 0; page < maxSub; page++) {
+                try {
+                  const r = await this.fetchApi("回答子回复", { comment_id: root, cursor }, session);
+                  const d = JSON.parse(r.body);
+                  totalTime += r.responseTime;
+                  if (Array.isArray(d.data)) { allReplies = allReplies.concat(d.data); if (d.paging?.is_end) break; cursor = d.paging?.next || ""; } else break;
+                } catch { break; }
+              }
+              results.push({ unit, status: "success", data: { data: allReplies, paging: { totals: allReplies.length } }, method: "signature", responseTime: totalTime });
+            } else {
+              const commentsResult: any = results.find((r) => r.unit === "zhihu_comments" && r.status === "success");
+              if (!commentsResult) { results.push({ unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「回答评论」", responseTime: 0 }); break; }
+              const topComments: any[] = commentsResult.data?.data || [];
+              const rpids = topComments.map((r: any) => String(r.id)).filter(Boolean);
+              if (rpids.length === 0) { results.push({ unit, status: "success", data: { data: [], paging: { totals: 0 } }, method: "signature", responseTime: 0 }); break; }
+              const target = rpids.slice(0, 100);
+              const rpidResults = await this.runWithConcurrency(target, 3, async (rpid: string) => {
+                await new Promise((r2) => setTimeout(r2, 500));
+                let replies: any[] = [];
+                let t = 0;
+                let c = "";
+                for (let p = 0; p < maxSub; p++) {
+                  try {
+                    const r = await this.fetchApi("回答子回复", { comment_id: rpid, cursor: c }, session);
+                    const d = JSON.parse(r.body);
+                    t += r.responseTime;
+                    if (Array.isArray(d.data)) { replies = replies.concat(d.data); if (d.paging?.is_end) break; c = d.paging?.next || ""; } else break;
+                  } catch { break; }
+                }
+                return { rpid, replies, all_count: replies.length, subReplyTime: t };
+              });
+              const byRpid: Record<string, any> = {};
+              let totalReplies = 0;
+              for (const rr of rpidResults) {
+                if (rr.all_count > 0) { byRpid[rr.rpid] = { replies: rr.replies, all_count: rr.all_count }; totalReplies += rr.all_count; }
+              }
+              results.push({ unit, status: "success", data: { data: byRpid, paging: { totals: totalReplies } }, method: "signature", responseTime: rpidResults.reduce((s: number, r: any) => s + r.subReplyTime, 0) });
+            }
             break;
           }
           default:

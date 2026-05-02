@@ -6,4 +6,6 @@ export interface ILogger {
   error(message: string, meta?: Record<string, unknown>): void;
   /** 设置当前请求的 traceId，后续日志自动附加。 */
   setTraceId?(traceId: string): void;
+  /** 设置当前模块名，后续日志自动附加。 */
+  setModule?(name: string): void;
 }

@@ -15,13 +15,6 @@ export async function loadBatchTasks(): Promise<BatchTaskList> {
   }
 }
 
-export async function generateDefaultTasksFile(): Promise<void> {
-  const tpl: BatchTaskList = {
-    tasks: [{ targetUrl: "https://example.com", networkCapture: { captureAll: true } }],
-  };
-  await fs.writeFile(TASKS_PATH, JSON.stringify(tpl, null, 2), "utf-8");
-}
-
 export function getSafeDomainName(url: string): string {
   try {
     const host = new URL(url).hostname;

@@ -3,8 +3,8 @@ import { SessionState } from "./ISessionManager";
 
 /** 浏览器自动化适配器端口。定义采集引擎需要实现的所有操作。 */
 export interface IBrowserAdapter {
-  /** 启动浏览器并导航到目标 URL。支持注入已有登录态。 */
-  launch(url: string, sessionState?: SessionState): Promise<void>;
+  /** 启动浏览器并导航到目标 URL。支持注入已有登录态和代理。 */
+  launch(url: string, sessionState?: SessionState, proxyUrl?: string): Promise<void>;
   /** 执行一组用户操作（点击、输入、等待、导航）。 */
   performActions(actions: HarvestConfig["actions"]): Promise<void>;
   /** 捕获页面发起的网络请求列表。 */

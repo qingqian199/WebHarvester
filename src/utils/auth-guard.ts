@@ -121,10 +121,7 @@ export class AuthGuard {
     const browser = new BrowserLifecycleManager(this.logger);
     try {
       const page = await browser.launch(loginUrl, false);
-      console.log("\n========================================");
-      console.log("🌐 有头浏览器已打开，请手动完成登录");
-      console.log("💡 登录成功后，程序将自动检测并继续 ...");
-      console.log("========================================\n");
+      this.logger.info("🌐 有头浏览器已打开，请手动完成登录 — 登录成功后程序将自动检测并继续");
       this.logger.info("等待手动登录...");
 
       await this.waitForLoginSuccess(page);

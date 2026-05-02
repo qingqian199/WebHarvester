@@ -1,0 +1,38 @@
+[
+  {
+    "endpoint": "推荐Feed",
+    "code": "error",
+    "msg": "",
+    "time": 0
+  },
+  {
+    "endpoint": "用户信息",
+    "code": "error",
+    "msg": "",
+    "time": 0
+  },
+  {
+    "endpoint": "用户视频",
+    "code": "error",
+    "msg": "",
+    "time": 0
+  },
+  {
+    "endpoint": "视频详情",
+    "code": "error",
+    "msg": "",
+    "time": 0
+  },
+  {
+    "endpoint": "搜索视频",
+    "code": "error",
+    "msg": "",
+    "time": 0
+  },
+  {
+    "endpoint": "热搜列表",
+    "code": "error",
+    "msg": "",
+    "time": 0
+  }
+]

@@ -18,6 +18,7 @@ export class BrowserLifecycleManager {
   private capturedRequests: Map<string, NetworkRequest> = new Map();
   private isNetworkCaptureEnabled = false;
   private pageMetrics: PageLoadMetrics | null = null;
+  private realHeaders: Map<string, Record<string, string>> = new Map();
 
   constructor(private readonly logger: ILogger) { }
 
@@ -46,7 +47,20 @@ export class BrowserLifecycleManager {
           await route.continue();
         }
       } catch {
-        await route.continue().catch(() => {});
+        await route.continue().catch(() => {}); // 页面已关闭时忽略 TargetClosedError
+      }
+    });
+
+    this.page.on("request", (req: Request) => {
+      const url = req.url();
+      const method = req.method();
+      const key = url + method;
+      // 记录 SDK 修改后的真实请求头（route() 捕获时 SDK 尚未修改）
+      this.realHeaders.set(key, req.headers());
+      // 更新 capturedRequests 中的 requestHeaders
+      const existing = this.capturedRequests.get(key);
+      if (existing) {
+        existing.requestHeaders = { ...existing.requestHeaders, ...req.headers(), _realHeader: "1" };
       }
     });
 
@@ -59,7 +73,7 @@ export class BrowserLifecycleManager {
       }
     });
 
-    this.logger.debug("网络捕获已启用（route + response 事件）");
+    this.logger.debug("网络捕获已启用（route + request + response 事件）");
   }
 
   getCapturedRequests(): NetworkRequest[] {
@@ -114,24 +128,29 @@ export class BrowserLifecycleManager {
 
   async launch(
     url: string,
-    headless = true,
+    headless: boolean,
     sessionState?: SessionState,
-    waitUntil: "networkidle" | "domcontentloaded" | "load" = "domcontentloaded",
+    waitUntil: "load" | "domcontentloaded" | "networkidle" = "domcontentloaded",
     timeout?: number,
+    proxyUrl?: string,
+    pageSetup?: (page: Page) => Promise<void>,
   ): Promise<Page> {
     this.capturedRequests.clear();
     this.isNetworkCaptureEnabled = false;
 
+    const args = [
+      "--disable-blink-features=AutomationControlled",
+      "--no-default-browser-check",
+      "--no-first-run",
+      "--disable-dev-shm-usage",
+      "--disable-features=IsolateOrigins,site-per-process",
+      "--disable-web-security",
+    ];
+    if (proxyUrl) args.push(`--proxy-server=${proxyUrl}`);
+
     this.browser = await chromium.launch({
       headless,
-      args: [
-        "--disable-blink-features=AutomationControlled",
-        "--no-default-browser-check",
-        "--no-first-run",
-        "--disable-dev-shm-usage",
-        "--disable-features=IsolateOrigins,site-per-process",
-        "--disable-web-security",
-      ],
+      args,
     });
 
     const fp = this.fingerprintProvider.getFingerprint();
@@ -167,7 +186,8 @@ export class BrowserLifecycleManager {
         }),
       });
 
-      // 覆盖 permissions.query 不暴露自动化
+      // 覆盖 permissions.query 不暴露自动化。
+      // navigator.permissions 类型在 Playwright 上下文中不完整，需 as any 才能修改。
       const originalQuery = (navigator as any).permissions.query.bind((navigator as any).permissions);
       (navigator as any).permissions.query = (p: any) =>
         p.name === "notifications"
@@ -202,23 +222,36 @@ export class BrowserLifecycleManager {
     }
 
     this.page.setDefaultTimeout(timeout ?? DEFAULT_ACTION_TIMEOUT_MS);
-    await this.page.goto(url, { waitUntil, timeout: timeout ?? DEFAULT_ACTION_TIMEOUT_MS });
 
-    if (sessionState) {
-      await this.page.evaluate(
-        ({ localData, sessionData }: { localData: Record<string, string>; sessionData: Record<string, string> }) => {
-          localStorage.clear();
-          sessionStorage.clear();
-          Object.entries(localData).forEach(([k, v]) => localStorage.setItem(k, v));
-          Object.entries(sessionData).forEach(([k, v]) => sessionStorage.setItem(k, v));
-        },
-        { localData: sessionState.localStorage, sessionData: sessionState.sessionStorage },
-      ).catch((e) => this.logger.warn("恢复 localStorage 失败", { err: (e as Error).message }));
+    if (pageSetup) {
+      await pageSetup(this.page).catch((e) => this.logger.warn("pageSetup 失败", { err: (e as Error).message }));
     }
 
-    await this.capturePageMetrics();
-    this.logger.info("页面加载完成", { url, waitUntil });
+    await this.page.goto(url, { waitUntil, timeout: timeout ?? DEFAULT_ACTION_TIMEOUT_MS });
     return this.page;
+  }
+
+  /** 从已存在的 BrowserContext 创建页面（复用池化浏览器，反检测脚本通过 addInitScript 注入）。 */
+  async attachToContext(context: any, url: string, sessionState?: SessionState, pageSetup?: (page: any) => Promise<void>): Promise<void> {
+    this.capturedRequests.clear();
+    this.isNetworkCaptureEnabled = false;
+    this.context = context as any;
+    this.pooled = true;
+    this.page = await context.newPage();
+
+    if (sessionState) {
+      const cookies = sessionState.cookies.map((c: any) => ({
+        name: c.name, value: c.value,
+        domain: c.domain.startsWith(".") ? c.domain : `.${c.domain}`,
+        path: c.path || "/",
+        httpOnly: c.httpOnly, secure: c.secure,
+        sameSite: ["Strict", "Lax", "None"].includes(String(c.sameSite)) ? c.sameSite as "Strict" | "Lax" | "None" : undefined,
+      }));
+      await context.addCookies(cookies);
+    }
+    if (pageSetup) await pageSetup(this.page!).catch(() => {});
+    this.startNetworkCapture();
+    await this.page!.goto(url, { waitUntil: "domcontentloaded" });
   }
 
   getPage(): Page {
@@ -226,13 +259,20 @@ export class BrowserLifecycleManager {
     return this.page;
   }
 
+  private pooled = false;
+
+  /** 标记为池化模式：close() 只关闭 page，不关闭 context/browser。 */
+  markPooled(): void { this.pooled = true; }
+
   async close(): Promise<void> {
-    await this.page?.unrouteAll({ behavior: "ignoreErrors" }).catch(() => { });
-    await this.page?.close().catch(() => { });
-    await this.context?.close().catch(() => { });
-    await this.browser?.close().catch(() => { });
-    this.browser = null;
-    this.context = null;
+    await this.page?.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
+    await this.page?.close().catch(() => {});
     this.page = null;
+    if (!this.pooled) {
+      await this.context?.close().catch(() => {});
+      await this.browser?.close().catch(() => {});
+      this.browser = null;
+      this.context = null;
+    }
   }
 }

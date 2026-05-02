@@ -4,6 +4,10 @@
  */
 
 /** 解析结果 */
+import { ConsoleLogger } from "../adapters/ConsoleLogger";
+
+const urlLogger = new ConsoleLogger("warn");
+
 export interface ResolvedParams {
   [key: string]: string;
 }
@@ -14,17 +18,13 @@ export function resolveBilibiliUrl(url: string): ResolvedParams {
   try {
     const u = new URL(url);
     const path = u.pathname;
-    // /video/BV1wN9QBJESj
     const bvMatch = path.match(/\/video\/(BV[a-zA-Z0-9]+)/i);
     if (bvMatch) params.bvid = bvMatch[1];
-    // /space/123456
     const midMatch = path.match(/\/space\/(\d+)/);
     if (midMatch) params.mid = midMatch[1];
-    // search.bilibili.com/all?keyword=xxx
     const kwMatch = u.searchParams.get("keyword");
     if (kwMatch) params.keyword = kwMatch;
-    // /video/BVxxx 也提供 aid？不直接提供，但 bvid 可以后续转 aid
-  } catch {}
+  } catch { urlLogger.warn("resolveBilibiliUrl: 解析失败", { url }); }
   return params;
 }
 
@@ -43,7 +43,7 @@ export function resolveZhihuUrl(url: string): ResolvedParams {
     // www.zhihu.com/search?q=xxx
     const qMatch = u.searchParams.get("q") || u.searchParams.get("keyword");
     if (qMatch) params.keyword = qMatch;
-  } catch {}
+  } catch { urlLogger.warn("resolveZhihuUrl: 解析失败", { url }); }
   return params;
 }
 
@@ -62,6 +62,22 @@ export function resolveXiaohongshuUrl(url: string): ResolvedParams {
     // /search_result?keyword=xxx
     const kwMatch = u.searchParams.get("keyword");
     if (kwMatch) params.keyword = kwMatch;
-  } catch {}
+  } catch { urlLogger.warn("resolveXiaohongshuUrl: 解析失败", { url }); }
+  return params;
+}
+
+/** TikTok URL 解析 */
+export function resolveTikTokUrl(url: string): ResolvedParams {
+  const params: ResolvedParams = {};
+  try {
+    const u = new URL(url);
+    const path = u.pathname;
+    const videoMatch = path.match(/\/@([^/]+)\/video\/(\d+)/);
+    if (videoMatch) { params.unique_id = videoMatch[1]; params.video_id = videoMatch[2]; }
+    const userMatch = path.match(/\/@([^/]+)/);
+    if (userMatch && !params.unique_id) params.unique_id = userMatch[1];
+    const qMatch = u.searchParams.get("q") || u.searchParams.get("keyword");
+    if (qMatch) params.keyword = qMatch;
+  } catch { urlLogger.warn("resolveTikTokUrl: 解析失败", { url }); }
   return params;
 }

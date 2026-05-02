@@ -46,11 +46,18 @@
           <div class="wizard-body">
             <!-- Step 1: Site Selection -->
             <div id="wizardStep1" class="wizard-step-content active">
+              <div style="margin-bottom:12px;">
+                <label style="color:#94a3b8;">目标 URL（粘贴后自动匹配站点）：</label>
+                <input id="wizardUrl" placeholder="https://www.bilibili.com/video/BV1..." onpaste="setTimeout(onPasteUrl,50)" style="width:100%;margin-top:4px;" />
+              </div>
               <div class="site-cards" id="siteCards"></div>
               <button onclick="wizardNext()" style="margin-top:12px;">下一步 →</button>
             </div>
             <!-- Step 2: Unit Selection -->
             <div id="wizardStep2" class="wizard-step-content">
+              <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
+                <input type="checkbox" id="guestModeCheck" /> 🌐 游客态（仅使用设备标识，不携带登录凭证）
+              </label>
               <div class="card-grid" id="unitCards"></div>
               <button onclick="wizardPrev()">← 上一步</button>
               <button onclick="wizardNext()">下一步 →</button>
@@ -73,7 +80,10 @@
       <!-- Sessions -->
       <div id="view-sessions" class="view">
         <h2>💬 会话管理</h2>
-        <button onclick="loadSessionCards()">🔄 刷新</button>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button onclick="loadSessionCards()">🔄 刷新</button>
+          <button class="secondary" onclick="startQrLogin()">📱 扫码登录</button>
+        </div>
         <div id="sessionCards" class="card-grid"></div>
       </div>
 
@@ -106,6 +116,18 @@
       <pre id="stubCode" style="background:#0f172a;padding:12px;border-radius:4px;max-height:400px;overflow:auto;font-size:0.8rem;"></pre>
       <button onclick="copyStub()">📋 复制</button>
       <button onclick="closeModal()">关闭</button>
+    </div>
+  </div>
+
+  <!-- QR Login Confirm Modal -->
+  <div id="qrConfirmModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeQrModal()">
+    <div class="modal-content" style="width:400px;max-width:90vw;text-align:center;">
+      <h3>✅ 检测到扫码登录</h3>
+      <div id="qrUserInfo" style="margin:16px 0;font-size:1.1rem;"></div>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button onclick="confirmQrSave()">💾 保存会话</button>
+        <button class="secondary" onclick="discardQrSession()">🗑 放弃</button>
+      </div>
     </div>
   </div>
 

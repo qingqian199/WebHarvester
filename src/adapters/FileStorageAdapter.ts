@@ -1,6 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
 import { IStorageAdapter } from "../core/ports/IStorageAdapter";
+import { formatError } from "../core/error/error-registry";
+import { ConsoleLogger } from "./ConsoleLogger";
 import { HarvestResult } from "../core/models";
 import { getSafeDomainName } from "../utils/batch-loader";
 import { FeatureFlags } from "../core/features";
@@ -43,46 +45,43 @@ export class FileStorageAdapter implements IStorageAdapter {
     await this.fs.mkdir(dir);
     const baseName = `harvest-${result.traceId}`;
 
+    // 缓存 JSON 字符串，各输出格式复用避免重复序列化
+    const jsonStr = JSON.stringify(result, null, 2);
     const jsonPath = path.join(dir, `${baseName}.json`);
-    await this.fs.writeFile(jsonPath, JSON.stringify(result, null, 2));
+
+    const writes: Promise<void>[] = [
+      this.fs.writeFile(jsonPath, jsonStr),
+    ];
 
     if (["all", "md"].includes(outputFormat)) {
-      const md = generateMarkdownReport(result);
-      await this.fs.writeFile(path.join(dir, `${baseName}.md`), md);
+      writes.push(this.fs.writeFile(path.join(dir, `${baseName}.md`), generateMarkdownReport(result)));
     }
 
     if (["all", "csv"].includes(outputFormat)) {
-      const csv = generateApiCsv(result.networkRequests);
-      await this.fs.writeFile(path.join(dir, `${baseName}-api.csv`), csv);
+      writes.push(this.fs.writeFile(path.join(dir, `${baseName}-api.csv`), generateApiCsv(result.networkRequests)));
     }
 
     if (FeatureFlags.enableHarExport && ["all", "har"].includes(outputFormat)) {
-      const har = generateHarString(result);
-      await this.fs.writeFile(path.join(dir, `${baseName}.har`), har);
+      writes.push(this.fs.writeFile(path.join(dir, `${baseName}.har`), generateHarString(result)));
     }
 
     if (FeatureFlags.enableAiCompactMode && this.cliArgs?.aiMode) {
       const aiGen = new AiSummaryGenerator();
-      const aiData = aiGen.build(result);
-      await this.fs.writeFile(path.join(dir, `${baseName}-ai-compact.json`), JSON.stringify(aiData, null, 2));
+      writes.push(this.fs.writeFile(path.join(dir, `${baseName}-ai-compact.json`), JSON.stringify(aiGen.build(result), null, 2)));
     }
 
     if (FeatureFlags.enableSecurityAudit && this.cliArgs?.securityAudit) {
       const auditor = new SecurityAuditor();
       const auditReport: SecurityAuditReport = auditor.scan(result);
-      await this.fs.writeFile(path.join(dir, `${baseName}-security-audit.json`), JSON.stringify(auditReport, null, 2));
-      const auditMd = this.buildAuditMarkdown(auditReport);
-      await this.fs.writeFile(path.join(dir, `${baseName}-security-audit.md`), auditMd);
+      writes.push(this.fs.writeFile(path.join(dir, `${baseName}-security-audit.json`), JSON.stringify(auditReport, null, 2)));
+      writes.push(this.fs.writeFile(path.join(dir, `${baseName}-security-audit.md`), this.buildAuditMarkdown(auditReport)));
     }
 
     if (FeatureFlags.enableAntiCrawlTagging) {
       const tagger = new AntiCrawlTagger();
       const items = tagger.tag(result.networkRequests);
       if (items.length > 0) {
-        await this.fs.writeFile(
-          path.join(dir, `${baseName}-anti-crawl.json`),
-          JSON.stringify(items, null, 2),
-        );
+        writes.push(this.fs.writeFile(path.join(dir, `${baseName}-anti-crawl.json`), JSON.stringify(items, null, 2)));
       }
     }
 
@@ -92,8 +91,16 @@ export class FileStorageAdapter implements IStorageAdapter {
       const wbiStub = gen.generateWbiStub(result, lang);
       if (wbiStub) {
         const ext = lang === "python" ? "py" : "js";
-        await this.fs.writeFile(path.join(dir, `${baseName}-wbi-stub.${ext}`), wbiStub.code);
-        await this.fs.writeFile(path.join(dir, `${baseName}-wbi-test.${ext}`), wbiStub.testCode);
+        writes.push(this.fs.writeFile(path.join(dir, `${baseName}-wbi-stub.${ext}`), wbiStub.code));
+        writes.push(this.fs.writeFile(path.join(dir, `${baseName}-wbi-test.${ext}`), wbiStub.testCode));
+      }
+    }
+
+    const results = await Promise.allSettled(writes);
+    const logger = new ConsoleLogger("warn");
+    for (const r of results) {
+      if (r.status === "rejected") {
+        logger.warn(formatError("E301", (r.reason as Error).message));
       }
     }
   }

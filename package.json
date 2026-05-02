@@ -18,6 +18,7 @@
     "extract-endpoints": "ts-node scripts/extract-api-endpoints.ts",
     "export-xlsx": "ts-node scripts/export-xlsx.ts",
     "gen-stub": "ts-node src/cli/gen-stub.ts",
+    "extract:tiktok-wasm": "ts-node scripts/extract-tiktok-wasm.ts",
     "pkg-win": "pkg dist/index.js --targets=node20-win-x64 --output=WebHarvester.exe"
   },
   "lint-staged": {
@@ -26,20 +27,34 @@
     ]
   },
   "dependencies": {
+    "bcrypt": "^6.0.0",
+    "chalk": "^4.1.2",
+    "cli-progress": "^3.12.0",
     "glob": "^13.0.6",
     "inquirer": "^9.2.20",
+    "jsonwebtoken": "^9.0.3",
     "node-fetch": "^2.7.0",
-    "playwright": "^1.44.0"
+    "playwright": "^1.44.0",
+    "tiktok-signature": "^4.3.3",
+    "zod": "^4.4.2"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/chalk": "^0.4.31",
+    "@types/cli-progress": "^3.11.6",
     "@types/inquirer": "^9.0.7",
     "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.12.7",
     "@types/node-fetch": "^2.6.13",
+    "@types/source-map-support": "^0.5.10",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
+    "jest": "^30.2.0",
+    "js-beautify": "^1.15.4",
     "rimraf": "^6.1.3",
+    "source-map-support": "^0.5.21",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5",

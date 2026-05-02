@@ -1,4 +1,4 @@
-import { isValidUrl, ensureValidUrl, safeRegExp, filterEmptySelectors, resolveUrl } from "./validator";
+import { isValidUrl, ensureValidUrl, filterEmptySelectors } from "./validator";
 import { BizError } from "../core/error/BizError";
 
 describe("isValidUrl", () => {
@@ -33,28 +33,6 @@ describe("ensureValidUrl", () => {
   });
 });
 
-describe("safeRegExp", () => {
-  it("returns RegExp for valid pattern", () => {
-    const re = safeRegExp("hello");
-    expect(re).toBeInstanceOf(RegExp);
-    expect(re!.test("hello world")).toBe(true);
-  });
-
-  it("returns null for invalid pattern", () => {
-    expect(safeRegExp("(")).toBeNull();
-  });
-
-  it("uses default flags 'gi'", () => {
-    const re = safeRegExp("test")!;
-    expect(re.flags).toBe("gi");
-  });
-
-  it("accepts custom flags", () => {
-    const re = safeRegExp("test", "i")!;
-    expect(re.flags).toBe("i");
-  });
-});
-
 describe("filterEmptySelectors", () => {
   it("returns non-empty strings", () => {
     expect(filterEmptySelectors(["#id", ".class"])).toEqual(["#id", ".class"]);
@@ -73,20 +51,4 @@ describe("filterEmptySelectors", () => {
   });
 });
 
-describe("resolveUrl", () => {
-  it("joins base and path", () => {
-    expect(resolveUrl("https://example.com", "api/users")).toBe("https://example.com/api/users");
-  });
-
-  it("handles trailing slash on base", () => {
-    expect(resolveUrl("https://example.com/", "api/users")).toBe("https://example.com/api/users");
-  });
-
-  it("handles leading slash on path", () => {
-    expect(resolveUrl("https://example.com", "/api/users")).toBe("https://example.com/api/users");
-  });
-
-  it("handles both slashes", () => {
-    expect(resolveUrl("https://example.com/", "/api/users")).toBe("https://example.com/api/users");
-  });
-});
+// resolveUrl and safeRegExp removed — no production usage

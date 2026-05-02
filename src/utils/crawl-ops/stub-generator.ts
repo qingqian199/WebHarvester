@@ -1,4 +1,5 @@
 import { HarvestResult } from "../../core/models";
+import { extractWbiKey, MIXIN_KEY_ENC_TAB } from "../crypto/bilibili-signer";
 
 export interface WbiStub {
   language: "python" | "javascript";
@@ -53,19 +54,9 @@ export class StubGenerator {
       if (k.includes("wbi_img_url")) imgUrl = v;
       if (k.includes("wbi_sub_url")) subUrl = v;
     }
-    const extractKey = (url: string) => {
-      try {
-        const parts = url.split("/");
-        const filename = parts[parts.length - 1];
-        const name = filename.split(".")[0];
-        return name.slice(name.indexOf("-") + 1);
-      } catch {
-        return "";
-      }
-    };
     return {
-      imgKey: imgUrl ? extractKey(imgUrl) : null,
-      subKey: subUrl ? extractKey(subUrl) : null,
+      imgKey: imgUrl ? extractWbiKey(imgUrl) : null,
+      subKey: subUrl ? extractWbiKey(subUrl) : null,
     };
   }
 
@@ -127,12 +118,10 @@ if __name__ == "__main__":
   }
 
   private jsWbiCode(imgKey: string, subKey: string): string {
-    return `const MIXIN_KEY_ENC_TAB = [
-  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
-  27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
-  37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
-  22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 52, 44, 34
-];
+    const tableStr = MIXIN_KEY_ENC_TAB.join(", ");
+    return `const crypto = require('crypto');
+
+const MIXIN_KEY_ENC_TAB = [${tableStr}];
 
 function getMixinKey(orig) {
   return MIXIN_KEY_ENC_TAB.map(i => orig[i]).join('').slice(0, 32);
@@ -142,13 +131,12 @@ const IMG_KEY = "${imgKey}";
 const SUB_KEY = "${subKey}";
 const MIXIN_KEY = getMixinKey(IMG_KEY + SUB_KEY);
 
-async function sign(params) {
+function sign(params) {
   params.wts = Math.floor(Date.now() / 1000).toString();
   const sortedKeys = Object.keys(params).sort();
   const query = sortedKeys.map(k => k + '=' + encodeURIComponent(params[k])).join('&');
   const signStr = query + MIXIN_KEY;
-  const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signStr));
-  params.w_rid = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  params.w_rid = crypto.createHash('md5').update(signStr, 'utf-8').digest('hex');
   return params;
 }
 `;

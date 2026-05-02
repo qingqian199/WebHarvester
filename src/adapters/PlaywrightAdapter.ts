@@ -6,16 +6,25 @@ import { BrowserLifecycleManager } from "./BrowserLifecycleManager";
 import { randomDelay } from "../utils/human-behavior";
 import { BROWSER_MASK_CONFIG } from "../core/config";
 import { REQUEST_CAPTURE_EXTRA_WAIT_MS } from "../core/constants/GlobalConstant";
+import { releaseBrowser } from "../utils/BrowserPool";
 
 export class PlaywrightAdapter implements IBrowserAdapter {
   private readonly lcm: BrowserLifecycleManager;
+  private poolSite = "";
 
   constructor(private readonly logger: ILogger) {
     this.lcm = new BrowserLifecycleManager(logger);
   }
 
-  async launch(url: string, sessionState?: SessionState): Promise<void> {
-    await this.lcm.launch(url, true, sessionState);
+  /** 启动浏览器并导航到 URL。可选的 pageSetup 回调在页面创建后、导航前调用。 */
+  async launch(url: string, sessionState?: SessionState, proxyUrl?: string, pageSetup?: (page: any) => Promise<void>): Promise<void> {
+    await this.lcm.launch(url, true, sessionState, "domcontentloaded", undefined, proxyUrl, pageSetup);
+  }
+
+  /** 从已存在的 Browser Context 创建页面（浏览器池复用）。 */
+  async attachToContext(context: any, url: string, sessionState?: SessionState, pageSetup?: (page: any) => Promise<void>, site?: string): Promise<void> {
+    this.poolSite = site || "";
+    await this.lcm.attachToContext(context, url, sessionState, pageSetup);
   }
 
   async performActions(actions: HarvestConfig["actions"]): Promise<void> {
@@ -53,7 +62,7 @@ export class PlaywrightAdapter implements IBrowserAdapter {
     captureAll: boolean;
   }): Promise<NetworkRequest[]> {
     const page = this.lcm.getPage();
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => { });
+    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {}); // 超时不阻塞采集
     await new Promise((r) => setTimeout(r, REQUEST_CAPTURE_EXTRA_WAIT_MS));
     return this.lcm.getCapturedRequests();
   }
@@ -126,5 +135,6 @@ export class PlaywrightAdapter implements IBrowserAdapter {
 
   async close(): Promise<void> {
     await this.lcm.close();
+    if (this.poolSite) releaseBrowser(this.poolSite);
   }
 }

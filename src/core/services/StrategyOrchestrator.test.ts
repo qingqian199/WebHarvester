@@ -1,4 +1,8 @@
+import fetch from "node-fetch";
 import { StrategyOrchestrator } from "./StrategyOrchestrator";
+
+jest.mock("node-fetch");
+const mockFetch = fetch as jest.MockedFunction<typeof fetch>;
 
 describe("StrategyOrchestrator", () => {
   it("returns 'http' for a simple static article page", async () => {
@@ -80,5 +84,102 @@ describe("StrategyOrchestrator", () => {
 
   it("handles empty string input", async () => {
     expect(await StrategyOrchestrator.decideEngine("")).toBe("browser");
+  });
+});
+
+describe("StrategyOrchestrator.scout", () => {
+  beforeEach(() => {
+    StrategyOrchestrator.clearCache();
+    jest.clearAllMocks();
+  });
+
+  it("returns 'browser' for Cloudflare 503 JS challenge", async () => {
+    mockFetch.mockResolvedValueOnce({
+      status: 503,
+      text: () => Promise.resolve("<html><body>Just a moment... <script src=\"/cdn-cgi/challenge-platform/scripts/main.js\"></script></body></html>"),
+      headers: new Map(),
+      ok: false,
+    } as any);
+
+    const result = await StrategyOrchestrator.scout("https://example.com");
+    expect(result).toBe("browser");
+  });
+
+  it("returns 'http' for a normal static page", async () => {
+    const paras = Array.from({ length: 20 }, (_, i) => `<p>This is paragraph number ${i + 1} with enough text to simulate a real content page that should be detected as static document http engine decision.</p>`).join("\n");
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      text: () => Promise.resolve(`<!DOCTYPE html><html><body><main><article>${paras}</article></main></body></html>`),
+      headers: new Map(),
+      ok: true,
+    } as any);
+
+    const result = await StrategyOrchestrator.scout("https://static.example.com");
+    expect(result).toBe("http");
+  });
+
+  it("follows 302 redirect then evaluates", async () => {
+    const paras = Array.from({ length: 20 }, (_, i) => `<p>Paragraph ${i + 1} with enough text content here to make this a static document that should pass the orchestrator threshold of five hundred characters easily.</p>`).join("\n");
+    mockFetch
+      .mockResolvedValueOnce({
+        status: 302,
+        headers: new Map([["location", "https://final.example.com/page"]]),
+        text: () => Promise.resolve(""),
+        ok: false,
+      } as any)
+      .mockResolvedValueOnce({
+        status: 200,
+        text: () => Promise.resolve(`<html><body><main>${paras}</main></body></html>`),
+        headers: new Map(),
+        ok: true,
+      } as any);
+
+    const result = await StrategyOrchestrator.scout("https://redirect.example.com");
+    expect(result).toBe("http");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 'browser' for SPA pages", async () => {
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      text: () => Promise.resolve("<html><body><div id=\"app\"></div><script src=\"app.js\"></script></body></html>"),
+      headers: new Map(),
+      ok: true,
+    } as any);
+
+    const result = await StrategyOrchestrator.scout("https://spa.example.com");
+    expect(result).toBe("browser");
+  });
+
+  it("returns cached result for same domain within TTL", async () => {
+    mockFetch.mockResolvedValueOnce({
+      status: 200,
+      text: () => Promise.resolve("<html><body><main><p>".repeat(50) + "</p></main></body></html>"),
+      headers: new Map(),
+      ok: true,
+    } as any);
+
+    await StrategyOrchestrator.scout("https://cached.example.com");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // 第二次调用同一域名—应命中缓存
+    await StrategyOrchestrator.scout("https://cached.example.com/page2");
+    expect(mockFetch).toHaveBeenCalledTimes(1); // 未增加
+  });
+
+  it("handles fetch error gracefully", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("timeout"));
+
+    const result = await StrategyOrchestrator.scout("https://error.example.com");
+    expect(result).toBe("browser");
+  });
+
+  it("cache size reflects distinct domains", async () => {
+    expect(StrategyOrchestrator.cacheSize).toBe(0);
+    mockFetch.mockResolvedValue({ status: 200, text: () => Promise.resolve("ok"), headers: new Map(), ok: true } as any);
+
+    await StrategyOrchestrator.scout("https://a.com");
+    await StrategyOrchestrator.scout("https://b.com");
+    expect(StrategyOrchestrator.cacheSize).toBe(2);
   });
 });

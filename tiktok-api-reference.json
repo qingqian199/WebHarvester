@@ -1,0 +1,59 @@
+{
+  "_note": "TikTok API 参考样本 — 通过 Playwright 自动捕获",
+  "_capturedAt": "2026-05-01T13:55:00Z",
+  "_limitation": "X-Bogus 签名在浏览器内核层面注入，Playwright 无法拦截。需要从 TikTok JS SDK 中逆向 X-Bogus 算法。",
+
+  "session": {
+    "ttwid": "1%7C8k3Lm5PL6g48NsqKetpZiVizEp09hyKmHl_EL1js-ik%7C1777639601%7C1c6527d3ff36a7f7ef94d8a6db72a347e8642a37b9fc67f16cac0e40d38b9495",
+    "sessionid": "c4450bfe9de059ae8c4aad1f6700d320",
+    "tt_csrf_token": "tHtmF8YX-qa3CIngYue6nFSFAstEDNO_sAaI"
+  },
+
+  "api_endpoints": [
+    {
+      "endpoint": "/api/recommend/item_list",
+      "method": "GET",
+      "query_params": {
+        "aid": "1988",
+        "app_name": "tiktok_web",
+        "device_platform": "web_pc",
+        "count": "30"
+      },
+      "note": "推荐 Feed — 无需 X-Bogus 即可访问（带有效 session）"
+    },
+    {
+      "endpoint": "/api/preload/item_list",
+      "method": "GET",
+      "query_params": {},
+      "note": "预加载数据"
+    },
+    {
+      "endpoint": "/tiktok/ppf/api/eligibility/v2",
+      "method": "POST",
+      "note": "PPF 资格检查"
+    }
+  ],
+
+  "x_bogus_research_notes": {
+    "observation": "TikTok 的 X-Bogus 签名在请求生命周期中由浏览器原生层或 Service Worker 注入，Playwright 的 request 和 requestfailed 事件均无法捕获到已注入的 X-Bogus 头。",
+    "implication": "X-Bogus 算法的逆向需要从 TikTok SDK 的 WASM 或 JS 混淆代码中提取。",
+    "current_strategy": "无 X-Bogus 时，带有效 session 的请求仍可正常工作（至少推荐 Feed 可访问）。继续使用页面提取兜底策略。",
+    "future_work": [
+      "从 TikTok 页面 JS 包中提取 X-Bogus 算法 (wag.js / web.browser.min.js)",
+      "或使用 Puppeteer/Playwright 的 CDPSession 在更低层级捕获请求",
+      "或使用 mitmproxy 等中间人代理捕获完整请求"
+    ]
+  },
+
+  "page_extraction": {
+    "data_source": "window.SIGI_STATE — TikTok SPA 的完整前端状态",
+    "extraction_method": "browser.executeScript → JSON.stringify(SIGI_STATE.ItemModule)",
+    "coverages": {
+      "推荐Feed": "✅ SIGI_STATE.ItemModule — 前 20 条推荐视频",
+      "用户主页": "✅ SIGI_STATE.UserModule — 用户资料和视频列表",
+      "视频详情": "✅ SIGI_STATE.ItemModule + VideoData",
+      "搜索": "✅ __UNIVERSAL_DATA_FOR_LAYOUT__ — 搜索结果",
+      "评论": "✅ SIGI_STATE.CommentModule — 视频评论"
+    }
+  }
+}

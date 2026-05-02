@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-const MIXIN_KEY_ENC_TAB = [
+export const MIXIN_KEY_ENC_TAB = [
   46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
   27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
   37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
@@ -44,4 +44,16 @@ export function buildSignedQuery(
   return Object.entries(all)
     .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
     .join("&");
+}
+
+/**
+ * 从 localStorage 中的 wbi_img_url/wbi_sub_url 提取密钥字符串。
+ * URL 格式示例: "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077"
+ */
+export function extractWbiKey(url: string): string {
+  try {
+    return url.split("/").pop()?.split(".")[0] || "";
+  } catch {
+    return "";
+  }
 }

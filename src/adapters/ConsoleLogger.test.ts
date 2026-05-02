@@ -21,10 +21,10 @@ describe("ConsoleLogger", () => {
     it("debug level outputs all levels", () => {
       const log = new ConsoleLogger("debug");
       log.debug("d"); log.info("i"); log.warn("w"); log.error("e");
-      expect(spyDebug).toHaveBeenCalledWith(expect.stringContaining("[DEBUG] d"));
-      expect(spyLog).toHaveBeenCalledWith(expect.stringContaining("[INFO] i"));
-      expect(spyWarn).toHaveBeenCalledWith(expect.stringContaining("[WARN] w"));
-      expect(spyError).toHaveBeenCalledWith(expect.stringContaining("[ERROR] e"));
+      expect(spyDebug).toHaveBeenCalledWith(expect.stringMatching(/\[DEBUG\].* d/));
+      expect(spyLog).toHaveBeenCalledWith(expect.stringMatching(/\[INFO\].* i/));
+      expect(spyWarn).toHaveBeenCalledWith(expect.stringMatching(/\[WARN\].* w/));
+      expect(spyError).toHaveBeenCalledWith(expect.stringMatching(/\[ERROR\].* e/));
     });
 
     it("info level suppresses debug", () => {
@@ -69,20 +69,20 @@ describe("ConsoleLogger", () => {
     it("includes message in output", () => {
       const log = new ConsoleLogger("debug");
       log.info("hello");
-      expect(spyLog).toHaveBeenCalledWith(expect.stringContaining("hello"));
+      expect(spyLog).toHaveBeenCalledWith(expect.stringMatching(/hello/));
     });
 
     it("includes meta as JSON when provided", () => {
       const log = new ConsoleLogger("debug");
       log.info("test", { key: "val" });
-      expect(spyLog).toHaveBeenCalledWith(expect.stringContaining("\"key\":\"val\""));
+      expect(spyLog).toHaveBeenCalledWith(expect.stringMatching(/"key":"val"/));
     });
 
     it("omits meta when not provided", () => {
       const log = new ConsoleLogger("debug");
       log.info("plain");
       const call = spyLog.mock.calls[0][0] as string;
-      expect(call).not.toContain("|");
+      expect(call).not.toContain("\"");
     });
   });
 });

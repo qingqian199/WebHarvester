@@ -50,3 +50,49 @@ describe("BilibiliCrawler", () => {
     await expect(c.fetchApi("不存在的端点", {})).rejects.toThrow("未知端点");
   });
 });
+
+describe("runWithConcurrency", () => {
+  it("limits concurrent execution to concurrency count", async () => {
+    const c = new BilibiliCrawler();
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const fn = async (x: number) => {
+      concurrent++;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise((r) => setTimeout(r, 10));
+      concurrent--;
+      return x * 2;
+    };
+    const results = await c["runWithConcurrency"]([1, 2, 3, 4, 5, 6], 3, fn);
+    expect(maxConcurrent).toBeLessThanOrEqual(3);
+    expect([...results].sort((a, b) => a - b)).toEqual([2, 4, 6, 8, 10, 12]);
+  });
+
+  it("works with single item", async () => {
+    const c = new BilibiliCrawler();
+    const r = await c["runWithConcurrency"](["a"], 3, async (x) => x.toUpperCase());
+    expect(r).toEqual(["A"]);
+  });
+
+  it("works with empty input", async () => {
+    const c = new BilibiliCrawler();
+    const r = await c["runWithConcurrency"]([], 3, async (x) => x);
+    expect(r).toEqual([]);
+  });
+});
+
+describe("bili_video_sub_replies auto-traverse", () => {
+  it("fails when bili_video_comments is not in results", async () => {
+    const c = new BilibiliCrawler();
+    const results = await c.collectUnits(["bili_video_sub_replies"], { aid: "123", oid: "123" });
+    expect(results[0].status).toBe("failed");
+    expect(results[0].error).toContain("自动展开子回复需要先勾选");
+  });
+
+  it("fails when oid is missing", async () => {
+    const c = new BilibiliCrawler();
+    const results = await c.collectUnits(["bili_video_sub_replies"], {});
+    expect(results[0].status).toBe("failed");
+    expect(results[0].error).toContain("缺少 oid");
+  });
+});

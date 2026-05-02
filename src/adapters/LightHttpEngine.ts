@@ -1,6 +1,7 @@
 import fetch from "node-fetch";
 import { ILightHttpEngine, LightHttpResult } from "../core/ports/ILightHttpEngine";
 import { RealisticFingerprintProvider } from "./RealisticFingerprintProvider";
+import { getSharedHttpAgentForUrl } from "../utils/shared-http-agent";
 
 export class LightHttpEngine implements ILightHttpEngine {
   private readonly fp = new RealisticFingerprintProvider();
@@ -17,6 +18,7 @@ export class LightHttpEngine implements ILightHttpEngine {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Cache-Control": "no-cache"
       },
+      agent: getSharedHttpAgentForUrl(url),
       redirect: "follow",
       timeout: 15000
     });

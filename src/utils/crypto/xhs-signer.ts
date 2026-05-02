@@ -187,17 +187,7 @@ export function generateXsHeader(
 ): { "X-s": string; "X-t": string } {
   const xt = Date.now().toString();
   const a1 = cookies?.a1 ?? "";
-  const x3 = mnsv2(apiPath, data, a1, xt);
-
-  const payload = JSON.stringify({
-    x0: "1",
-    x1: a1,
-    x2: xt,
-    x3,
-    x4: "1",
-  });
-
-  const xs = "XYS_" + customBase64Encode(Buffer.from(payload, "utf-8"));
+  const xs = "XYS_" + mnsv2(apiPath, data, a1, xt);
 
   return { "X-s": xs, "X-t": xt };
 }

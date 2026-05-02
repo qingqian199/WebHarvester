@@ -1,0 +1,143 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, serif;
+  background: #0f172a;
+  color: #e2e8f0;
+  min-height: 100vh;
+}
+
+#app { max-width: 960px; margin: 0 auto; padding: 20px; }
+
+h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #38bdf8; }
+h2 { font-size: 1.2rem; margin-bottom: 0.75rem; color: #94a3b8; }
+
+button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  background: #334155;
+  color: #e2e8f0;
+  transition: background 0.2s;
+}
+button:hover { background: #475569; }
+button.primary { background: #2563eb; }
+button.primary:hover { background: #1d4ed8; }
+button.danger { background: #dc2626; }
+button.danger:hover { background: #b91c1c; }
+button.success { background: #16a34a; }
+button.success:hover { background: #15803d; }
+
+input, select {
+  padding: 8px 12px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+label { display: block; margin-bottom: 4px; color: #94a3b8; font-size: 0.85rem; }
+
+.form-group { margin-bottom: 1rem; }
+
+.card {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 1rem;
+}
+
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+.flex { display: flex; gap: 0.5rem; align-items: center; }
+.flex-wrap { flex-wrap: wrap; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge-ok { background: #166534; color: #86efac; }
+.badge-warn { background: #854d0e; color: #fde68a; }
+.badge-err { background: #7f1d1d; color: #fca5a5; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
+th { color: #94a3b8; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+
+/* 登录页 */
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 60vh;
+}
+.login-box {
+  background: #1e293b;
+  border-radius: 12px;
+  padding: 32px;
+  width: 100%;
+  max-width: 400px;
+}
+.login-box h1 { text-align: center; }
+.login-error { color: #fca5a5; font-size: 0.85rem; margin-top: 0.5rem; text-align: center; }
+
+/* 顶部导航 */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #334155;
+}
+.navbar h1 { margin: 0; }
+.navbar .user-info { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; color: #94a3b8; }
+
+/* Tab 导航 */
+.tabs { display: flex; gap: 4px; margin-bottom: 1rem; }
+.tab {
+  padding: 8px 16px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  background: #1e293b;
+  color: #94a3b8;
+  border: none;
+  font-size: 0.9rem;
+}
+.tab.active { background: #334155; color: #38bdf8; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* 健康面板 */
+.health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; }
+.health-item {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+.health-item .value { font-size: 1.5rem; font-weight: 700; color: #38bdf8; }
+.health-item .label { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+
+.spinner {
+  border: 2px solid #334155;
+  border-top: 2px solid #38bdf8;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

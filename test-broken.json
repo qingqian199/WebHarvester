@@ -1,0 +1,40 @@
+{
+  "headless": true,
+  "browserMask": {
+    "viewport": { "width": 1920, "height": 1080 },
+    "minDelayMs": 300,
+    "maxDelayMs": 800,
+    "enableHardwareMask": true
+  },
+  "actionTimeoutMs": "abc",
+  "taskTimeoutMs": 60000,
+  "captureAllNetwork": true,
+  "autoExtractAuth": true,
+  "autoExtractHiddenField": true,
+  "outputMd": true,
+  "outputCsv": true,
+  "outputDir": "./output",
+  "crawlOps": {
+    "generateStubs": true,
+    "stubLanguage": "python"
+  },
+  "crawlers": {
+    "xiaohongshu": "enabled",
+    "zhihu": "enabled",
+    "bilibili": "enabled",
+    "tiktok": "enabled"
+  },
+  "features": {
+    "enableSessionPersist": true,
+    "enableHarExport": true,
+    "enableDynamicFingerprint": true,
+    "enableAiCompactMode": true,
+    "enableSecurityAudit": true,
+    "enableAntiCrawlTagging": true,
+    "enableStubGeneration": true,
+    "enableParallelTask": false,
+    "enableBrowserPool": false,
+    "enableProxyPool": false,
+    "enableDaemonProcess": false
+  }
+}

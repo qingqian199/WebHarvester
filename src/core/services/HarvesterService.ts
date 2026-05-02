@@ -3,12 +3,12 @@ import { IBrowserAdapter } from "../ports/IBrowserAdapter";
 import { IStorageAdapter } from "../ports/IStorageAdapter";
 import { ISessionManager, SessionState } from "../ports/ISessionManager";
 import { HarvestConfig, HarvestResult } from "../models";
-import { generateTraceId } from "../../utils/trace";
-import { withGlobalTimeout } from "../../utils/taskTimeout";
+import { generateTraceId, withGlobalTimeout, filterEmptySelectors } from "../util";
+import { validateUrl } from "../../utils/url-validator";
 import { TASK_GLOBAL_TIMEOUT_MS } from "../config";
-import { ensureValidUrl, filterEmptySelectors } from "../../utils/validator";
 import { BizError } from "../error/BizError";
 import { ErrorCode } from "../error/ErrorCode";
+import { formatError } from "../error/error-registry";
 import { filterApiRequests, filterHiddenFields, extractAuthStorage } from "../rules";
 import { StrategyOrchestrator } from "./StrategyOrchestrator";
 import { ILightHttpEngine } from "../ports/ILightHttpEngine";
@@ -39,42 +39,57 @@ export class HarvesterService {
     sessionState?: SessionState
   ): Promise<HarvestResult> {
     return withGlobalTimeout(async () => {
-      if (!config?.targetUrl) {
-        throw new BizError(ErrorCode.EMPTY_TASK_CONFIG, "缺失目标网址");
-      }
-      ensureValidUrl(config.targetUrl);
+      try {
+        if (!config?.targetUrl) {
+          throw new BizError(ErrorCode.EMPTY_TASK_CONFIG, "缺失目标网址");
+        }
+        validateUrl(config.targetUrl);
 
-      const traceId = generateTraceId();
-      this.logger.setTraceId?.(traceId);
-      this.logger.info("开始采集任务", { url: config.targetUrl });
+        const traceId = generateTraceId();
+        this.logger.setTraceId?.(traceId);
+        this.logger.info("开始采集任务", { url: config.targetUrl });
 
       // 策略决策 0：优先使用特化爬虫
       if (this.crawlerDispatcher) {
         const session: CrawlerSession | undefined = sessionState
           ? { cookies: sessionState.cookies, localStorage: sessionState.localStorage }
           : undefined;
-        const pageData = await this.crawlerDispatcher.fetch(config.targetUrl, session);
-        if (pageData) {
-          return this.handleCrawlerResult(config, pageData, traceId, outputFormat);
+        try {
+          const pageData = await this.crawlerDispatcher.fetch(config.targetUrl, session);
+          if (pageData) {
+            return this.handleCrawlerResult(config, pageData, traceId, outputFormat);
+          }
+        } catch (e) {
+          this.logger.warn("特化爬虫请求失败，切换为通用引擎", { url: config.targetUrl, err: (e as Error).message });
         }
         this.logger.info("无特化爬虫匹配，切换为通用引擎", { url: config.targetUrl });
       }
 
-      // 策略决策 1：轻量 HTTP 引擎
+      // 策略决策 1：轻量 HTTP 引擎（含自适应侦察）
       if (this.httpEngine) {
-        const lightResult = await this.httpEngine.fetch(config.targetUrl).catch(() => null);
-        if (lightResult) {
-          const engine = await StrategyOrchestrator.decideEngine(lightResult.html);
-          if (engine === "http") {
-            return this.harvestWithHttp(config, lightResult, traceId, outputFormat);
-          }
-          this.logger.info("检测到动态页面，切换为浏览器引擎", { url: config.targetUrl });
+        const scouted = await StrategyOrchestrator.scout(config.targetUrl).catch(() => null);
+        if (scouted === "browser") {
+          this.logger.info("侦察检测到动态页面或 JS 挑战，直接使用浏览器引擎", { url: config.targetUrl });
         } else {
-          this.logger.warn("HTTP 引擎请求失败，回退到浏览器引擎", { url: config.targetUrl });
+          const lightResult = await this.httpEngine.fetch(config.targetUrl).catch(() => null);
+          if (lightResult) {
+            const engine = await StrategyOrchestrator.decideEngine(lightResult.html);
+            if (engine === "http") {
+              return this.harvestWithHttp(config, lightResult, traceId, outputFormat);
+            }
+            this.logger.info("检测到动态页面，切换为浏览器引擎", { url: config.targetUrl });
+          } else {
+            this.logger.warn("HTTP 引擎请求失败，回退到浏览器引擎", { url: config.targetUrl });
+          }
         }
       }
 
       return this.harvestWithBrowser(config, outputFormat, needSaveSession, sessionManager, sessionProfile, sessionState, traceId);
+      } catch (e) {
+        const msg = formatError("E001", config?.targetUrl);
+        this.logger.error(msg, { err: (e as Error).message });
+        throw e;
+      }
     }, TASK_GLOBAL_TIMEOUT_MS).finally(async () => {
       await this.browser.close();
     });
@@ -150,8 +165,14 @@ export class HarvesterService {
     traceId: string,
   ): Promise<HarvestResult> {
     const start = Date.now();
-    await this.browser.launch(config.targetUrl, sessionState);
-    await this.browser.performActions(config.actions);
+    try {
+      await this.browser.launch(config.targetUrl, sessionState);
+      await this.browser.performActions(config.actions);
+    } catch (e) {
+      const msg = formatError("E101", config.targetUrl);
+      this.logger.error(msg, { err: (e as Error).message });
+      throw new BizError(ErrorCode.BROWSER_LAUNCH_FAILED, (e as Error).message);
+    }
 
     const [networkRequests, elements, storage] = await Promise.all([
       this.browser.captureNetworkRequests(config.networkCapture ?? { captureAll: true }),
