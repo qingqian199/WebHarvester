@@ -1,13 +1,17 @@
 import { chromium, Browser, BrowserContext, Page, Request, Response, BrowserContextOptions } from "playwright";
 import { ILogger } from "../core/ports/ILogger";
 import { DEFAULT_ACTION_TIMEOUT_MS } from "../core/config/index";
-import { FeatureFlags } from "../core/features";
 import { RealisticFingerprintProvider } from "./RealisticFingerprintProvider";
 import { SessionState } from "../core/ports/ISessionManager";
 import { NetworkRequest, PageLoadMetrics } from "../core/models";
 
 const ANTI_DETECT_PLATFORM = "Win32";
 const NETWORK_CAPTURE_TYPES = ["xhr", "fetch"];
+
+function extractChromeVersion(ua: string): string {
+  const m = ua.match(/Chrome\/(\d+)\./);
+  return m ? m[1] : "124";
+}
 
 export class BrowserLifecycleManager {
   private browser: Browser | null = null;
@@ -22,10 +26,13 @@ export class BrowserLifecycleManager {
 
   constructor(private readonly logger: ILogger) { }
 
-  startNetworkCapture(): void {
+  startNetworkCapture(enableFullCapture?: boolean, captureAllTypes?: boolean): void {
     if (!this.page) throw new Error("Page not initialized");
     if (this.isNetworkCaptureEnabled) return;
     this.isNetworkCaptureEnabled = true;
+
+    const captureAll = enableFullCapture === true;
+    const captureXhr = captureAllTypes === true;
 
     this.page.route("**/*", async (route) => {
       try {
@@ -33,21 +40,25 @@ export class BrowserLifecycleManager {
         const url = req.url();
         const method = req.method();
         const key = url + method;
-        const isApi = NETWORK_CAPTURE_TYPES.includes(req.resourceType());
+        const resourceType = req.resourceType();
+        const isTarget = captureAll || captureXhr || NETWORK_CAPTURE_TYPES.includes(resourceType);
 
-        if (isApi) {
+        if (isTarget) {
           const response = await route.fetch();
-          const entry = this.ensureEntry(key, url, method, req);
+          const entry = this.ensureEntry(key, url, method, req, resourceType);
           entry.statusCode = response.status();
           entry.completedAt = Date.now();
-          entry.responseBody = await response.text().catch(() => null);
+          const rawBody = await response.text().catch(() => null);
+          entry.responseBody = captureXhr && rawBody && rawBody.length > 204800
+            ? rawBody.slice(0, 204800)
+            : rawBody;
           await route.fulfill({ response });
         } else {
-          this.ensureEntry(key, url, method, req);
+          this.ensureEntry(key, url, method, req, resourceType);
           await route.continue();
         }
       } catch {
-        await route.continue().catch(() => {}); // 页面已关闭时忽略 TargetClosedError
+        await route.continue().catch(() => {});
       }
     });
 
@@ -55,9 +66,7 @@ export class BrowserLifecycleManager {
       const url = req.url();
       const method = req.method();
       const key = url + method;
-      // 记录 SDK 修改后的真实请求头（route() 捕获时 SDK 尚未修改）
       this.realHeaders.set(key, req.headers());
-      // 更新 capturedRequests 中的 requestHeaders
       const existing = this.capturedRequests.get(key);
       if (existing) {
         existing.requestHeaders = { ...existing.requestHeaders, ...req.headers(), _realHeader: "1" };
@@ -73,7 +82,8 @@ export class BrowserLifecycleManager {
       }
     });
 
-    this.logger.debug("网络捕获已启用（route + request + response 事件）");
+    const mode = captureXhr ? "增强（XHR+Fetch+静态资源）" : captureAll ? "全量" : "标准";
+    this.logger.debug(`网络捕获已启用（${mode}模式，route + request + response 事件）`);
   }
 
   getCapturedRequests(): NetworkRequest[] {
@@ -110,7 +120,7 @@ export class BrowserLifecycleManager {
     }
   }
 
-  private ensureEntry(key: string, url: string, method: string, req: Request): NetworkRequest {
+  private ensureEntry(key: string, url: string, method: string, req: Request, resourceType?: string): NetworkRequest {
     let existing = this.capturedRequests.get(key);
     if (!existing) {
       existing = {
@@ -119,6 +129,7 @@ export class BrowserLifecycleManager {
         statusCode: 0,
         requestHeaders: req.headers(),
         requestBody: req.postData(),
+        resourceType: resourceType || req.resourceType(),
         timestamp: Date.now(),
       };
       this.capturedRequests.set(key, existing);
@@ -134,6 +145,8 @@ export class BrowserLifecycleManager {
     timeout?: number,
     proxyUrl?: string,
     pageSetup?: (page: Page) => Promise<void>,
+    enableFullCapture?: boolean,
+    captureAllTypes?: boolean,
   ): Promise<Page> {
     this.capturedRequests.clear();
     this.isNetworkCaptureEnabled = false;
@@ -157,11 +170,14 @@ export class BrowserLifecycleManager {
     const contextOpts: BrowserContextOptions = {
       viewport: fp.viewport,
       locale: fp.locale,
-      extraHTTPHeaders: { "Accept-Language": fp.acceptLanguage },
+      userAgent: fp.userAgent,
+      extraHTTPHeaders: {
+        "Accept-Language": fp.acceptLanguage,
+        "sec-ch-ua": `"Chromium";v="${extractChromeVersion(fp.userAgent)}", "Google Chrome";v="${extractChromeVersion(fp.userAgent)}", "Not-A.Brand";v="99"`,
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": `"${fp.platform === "Win32" ? "Windows" : fp.platform === "MacIntel" ? "macOS" : "Linux"}"`,
+      },
     };
-    if (FeatureFlags.enableDynamicFingerprint) {
-      contextOpts.userAgent = fp.userAgent;
-    }
 
     this.context = await this.browser.newContext(contextOpts);
     this.page = await this.context.newPage();
@@ -204,7 +220,7 @@ export class BrowserLifecycleManager {
       Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
     }, ANTI_DETECT_PLATFORM);
 
-    this.startNetworkCapture();
+    this.startNetworkCapture(enableFullCapture, captureAllTypes);
 
     if (sessionState) {
       const cookies = sessionState.cookies.map((c) => ({

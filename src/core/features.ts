@@ -8,12 +8,12 @@ export interface FeatureFlagSet {
   enableAntiCrawlTagging: boolean;
   enableStubGeneration: boolean;
 
-  // ── 未实现功能（预留） ──
-  /** @deprecated Not yet implemented, must be false */
-  enableParallelTask: boolean;
-  /** @deprecated Not yet implemented, must be false */
-  enableBrowserPool: boolean;
+  // 已实现 — 默认关闭，用户 opt-in
   enableProxyPool: boolean;
+  enableFullCaptureMode: boolean;
+  enableFullCaptureEnhanced: boolean;
+  /** 将浏览器令牌/签名服务分离到独立后端进程 */
+  enableBackendService: boolean;
   /** @deprecated Not yet implemented, must be false */
   enableDaemonProcess: boolean;
   [key: string]: boolean;
@@ -29,12 +29,15 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagSet = {
   enableAntiCrawlTagging: true,
   enableStubGeneration: true,
 
+  enableBackendService: false,
   // 未实现 — 必须保持 false
   enableParallelTask: false,
   enableBrowserPool: false,
   enableDaemonProcess: false,
   // 已实现 — 默认关闭，用户 opt-in
   enableProxyPool: false,
+  enableFullCaptureMode: false,
+  enableFullCaptureEnhanced: false,
 };
 
 export const FeatureFlags: FeatureFlagSet = { ...DEFAULT_FEATURE_FLAGS };

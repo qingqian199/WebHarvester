@@ -6,6 +6,7 @@ export interface NetworkRequest {
   requestHeaders: Record<string, string>;
   requestBody?: unknown;
   responseBody?: unknown;
+  resourceType?: string;
   timestamp: number;
   completedAt?: number;
 }
@@ -49,7 +50,7 @@ export interface HarvestConfig {
   elementSelectors?: string[];
   /** 自定义 JS 脚本列表。字符串为直接执行，对象为 {alias, script} 形式。 */
   jsScripts?: Array<string | { alias: string; script: string }>;
-  networkCapture?: { captureAll: boolean };
+  networkCapture?: { captureAll: boolean; enhancedFullCapture?: boolean };
   storageTypes?: Array<"localStorage" | "sessionStorage" | "cookies">;
 }
 

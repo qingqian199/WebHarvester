@@ -35,6 +35,15 @@ export type BiliContentUnit =
   | "bili_video_comments"
   | "bili_video_sub_replies";
 
+/** BOSS直聘内容单元类型。 */
+export type BossContentUnit =
+  | "boss_city_list"
+  | "boss_city_site"
+  | "boss_filter_conditions"
+  | "boss_industry_filter"
+  | "boss_search"
+  | "boss_job_detail";
+
 /** 内容单元配置。 */
 export interface ContentUnitDef {
   id: string;
@@ -80,6 +89,15 @@ export const BILI_CONTENT_UNITS: ContentUnitDef[] = [
   { id: "bili_user_videos", label: "UP主视频列表", requiredParams: ["mid"], description: "UP主所有视频" },
   { id: "bili_video_comments", label: "视频评论", requiredParams: ["aid"], optionalParams: ["max_pages"], description: "视频一级评论" },
   { id: "bili_video_sub_replies", label: "子回复", requiredParams: ["aid"], optionalParams: ["root", "max_sub_reply_pages"], description: "自动展开所有一级评论的子回复（无需手动填 root，需同时勾选「视频评论」）" },
+];
+
+export const BOSS_CONTENT_UNITS: ContentUnitDef[] = [
+  { id: "boss_city_list", label: "城市列表", requiredParams: [], description: "所有支持的城市分组" },
+  { id: "boss_city_site", label: "城市站点", requiredParams: [], description: "城市站点详细信息" },
+  { id: "boss_filter_conditions", label: "职类筛选条件", requiredParams: [], description: "职位分类筛选条件" },
+  { id: "boss_industry_filter", label: "行业过滤列表", requiredParams: [], description: "行业免过滤配置" },
+  { id: "boss_search", label: "搜索职位", requiredParams: ["keyword"], optionalParams: ["city", "page"], description: "按关键词搜索职位（city: 城市代码）" },
+  { id: "boss_job_detail", label: "职位详情", requiredParams: ["jobId"], description: "单个职位的详细信息" },
 ];
 
 /** 单个单元的采集结果。 */

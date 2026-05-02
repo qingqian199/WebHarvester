@@ -49,6 +49,13 @@ export class HarvesterService {
         this.logger.setTraceId?.(traceId);
         this.logger.info("开始采集任务", { url: config.targetUrl });
 
+        // 全量采集模式：跳过侦察和策略编排，直接启动浏览器做完整捕获
+        if (config.networkCapture?.captureAll) {
+          const enhanced = config.networkCapture?.enhancedFullCapture === true;
+          this.logger.info(`全量采集模式已启用${enhanced ? "（增强版 — 捕获 XHR/Fetch）" : ""}`, { url: config.targetUrl });
+          return this.harvestWithBrowser(config, outputFormat, needSaveSession, sessionManager, sessionProfile, sessionState, traceId, true, enhanced);
+        }
+
       // 策略决策 0：优先使用特化爬虫
       if (this.crawlerDispatcher) {
         const session: CrawlerSession | undefined = sessionState
@@ -163,10 +170,12 @@ export class HarvesterService {
     sessionProfile: string | undefined,
     sessionState: SessionState | undefined,
     traceId: string,
+    enableFullCapture?: boolean,
+    captureAllTypes?: boolean,
   ): Promise<HarvestResult> {
     const start = Date.now();
     try {
-      await this.browser.launch(config.targetUrl, sessionState);
+      await this.browser.launch(config.targetUrl, sessionState, undefined, undefined, enableFullCapture, captureAllTypes);
       await this.browser.performActions(config.actions);
     } catch (e) {
       const msg = formatError("E101", config.targetUrl);

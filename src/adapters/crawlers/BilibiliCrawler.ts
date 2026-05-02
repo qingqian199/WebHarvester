@@ -29,7 +29,7 @@ export const BiliFallbackEndpoints: ReadonlyArray<{
 ];
 
 export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
-  { name: "视频信息", path: "/x/web-interface/wbi/view/detail", needWbi: true, params: "aid=116435892372604", status: "verified" },
+  { name: "视频信息", path: "/x/web-interface/view", needWbi: false, params: "aid={aid}", status: "verified" },
   { name: "弹幕列表", path: "/x/v2/dm/web/view", params: "oid=37660265907&type=1", status: "verified" },
   { name: "字幕信息", path: "/x/v2/subtitle/web/view", params: "oid=37660265907", status: "verified" },
   { name: "直播间信息", path: "/xlive/web-room/v1/index/getRoomBaseInfo", params: "uids=173323339&req_biz=video", status: "verified" },
@@ -255,7 +255,7 @@ export class BilibiliCrawler extends BaseCrawler {
             }
             const { data: deduped, deduped_count } = this.dedupComments(allReplies);
             const cleanReplies = deduped.map((r) => ({
-              ...r, ctime: this.fmtTime(r.ctime), type: "main" as const,
+              ...r, type: "main" as const,
               member: r.member ? { ...r.member } : undefined,
             }));
             results.push({ unit, status: "success", data: { code: 0, data: { replies: cleanReplies, cursor: { all_count: deduped.length, deduped_count } } }, method: "signature", responseTime: totalTime });
@@ -302,7 +302,7 @@ export class BilibiliCrawler extends BaseCrawler {
                 if (rr.all_count > 0) {
                   const { data: deduped, deduped_count } = this.dedupComments(rr.replies);
                   const cleanReplies = deduped.map((r: any) => ({
-                    ...r, ctime: this.fmtTime(r.ctime), type: "sub" as const, parent_rpid: Number(rr.rpid),
+                    ...r, type: "sub" as const, parent_rpid: Number(rr.rpid),
                     member: r.member ? { ...r.member } : undefined,
                   }));
                   byRpid[rr.rpid] = { replies: cleanReplies as any, all_count: deduped.length };

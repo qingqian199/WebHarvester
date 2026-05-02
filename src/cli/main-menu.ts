@@ -68,14 +68,33 @@ export async function startMainMenu(): Promise<MenuAction> {
     }
 
     if (action === "single") {
+        const { mode } = await inquirer.prompt([{ type: "list", name: "mode", message: "选择采集模式：", choices: [
+            { name: "🔍 快速探测（仅主文档和关键信息）", value: "quick" },
+            { name: "📦 全量采集（捕获所有网络请求和完整数据）", value: "full" },
+            { name: "🔬 全量采集（增强版，捕获 XHR/Fetch + 所有资源）", value: "enhanced" },
+        ]}]);
         const ans = await inquirer.prompt([
             { type: "input", name: "targetUrl", message: "目标网址：", validate: v => !!v.trim() },
-            { type: "checkbox", name: "captureItems", message: "采集内容", choices: [
-                { name: "全量网络请求", value: "network", checked: true },
-                { name: "DOM 元素", value: "element", checked: true },
-                { name: "Cookie/存储", value: "storage", checked: true }
-            ]}
+            ...(mode === "quick" ? [{
+                type: "checkbox" as const, name: "captureItems" as const, message: "采集内容", choices: [
+                    { name: "全量网络请求", value: "network", checked: true },
+                    { name: "DOM 元素", value: "element", checked: true },
+                    { name: "Cookie/存储", value: "storage", checked: true }
+                ]
+            }] : []),
         ]);
+        const isEnhanced = mode === "enhanced";
+        const config: import("../core/models").HarvestConfig = {
+            targetUrl: ans.targetUrl.trim(),
+            networkCapture: { captureAll: mode === "full" || mode === "enhanced" || true, enhancedFullCapture: isEnhanced },
+            ...(mode === "quick" ? {
+                elementSelectors: ["input", "input[type=\"hidden\"]", "form", "button", "textarea", "select"],
+                storageTypes: ["localStorage", "sessionStorage", "cookies"] as const,
+            } : {}),
+        };
+        if (isEnhanced) {
+            console.log("\n⚠️ 增强全量模式将捕获页面所有网络请求（XHR/Fetch/静态资源），结果文件可能较大。\n");
+        }
         const { useProfile } = await inquirer.prompt([{ type: "confirm", name: "useProfile", message: "是否使用/保存登录会话？", default: false }]);
         let profile: string | undefined;
         let saveSession = false;
@@ -88,7 +107,7 @@ export async function startMainMenu(): Promise<MenuAction> {
                 profile = newName; saveSession = true;
             } else { profile = prof; saveSession = false; }
         }
-        return { type: "single", config: { targetUrl: ans.targetUrl.trim(), networkCapture: { captureAll: true }, elementSelectors: ["input", "input[type=\"hidden\"]", "form", "button", "textarea", "select"], storageTypes: ["localStorage", "sessionStorage", "cookies"] }, profile, saveSession };
+        return { type: "single", config, profile, saveSession };
     }
 
     if (action === "login") {

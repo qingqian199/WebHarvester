@@ -60,6 +60,10 @@ const ConfigSchema = z.object({
     testUrl: z.string().optional(),
     healthCheckIntervalMs: z.number().int().positive().optional(),
   }).optional(),
+  backendService: z.object({
+    baseUrl: z.string().default("http://localhost:3001"),
+    timeout: z.number().int().positive().default(30000),
+  }).optional(),
 });
 
 export type ValidatedConfig = z.infer<typeof ConfigSchema>;
@@ -94,6 +98,10 @@ export interface AppConfig {
   rateLimit?: RateLimitConfig;
   features?: Partial<FeatureFlagSet>;
   proxyPool?: ProxyPoolConfig;
+  backendService?: {
+    baseUrl: string;
+    timeout: number;
+  };
   jwtSecret?: string;
   users?: Array<{ username: string; passwordHash: string; role?: string }>;
   encrypted?: { masterKey?: string; algorithm?: string };

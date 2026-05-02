@@ -20,6 +20,26 @@ describe("formatUnitResult", () => {
       expect(r.fields.some((f) => f.label === "时长" && f.value === "6:07")).toBe(true);
     });
 
+    it("formats video detail with View wrapper (actual Bilibili API shape)", () => {
+      const data = { code: 0, data: {
+        View: {
+          title: "B站全量实测视频",
+          desc: "这是一段测试简介",
+          pubdate: 1700000000,
+          duration: 245,
+          owner: { name: "测试UP", mid: 67890 },
+          stat: { view: 99999, like: 3000, coin: 200, favorite: 1000, share: 150 },
+          tname: "科技",
+        },
+      } };
+      const r = formatUnitResult("bili_video_info", data);
+      expect(r.title).toBe("B站全量实测视频");
+      expect(r.summary).toContain("10.0万播放");
+      expect(r.fields.some((f) => f.label === "UP主" && f.value === "测试UP")).toBe(true);
+      expect(r.fields.some((f) => f.label === "播放" && f.value === "10.0万")).toBe(true);
+      expect(r.fields.some((f) => f.label === "简介")).toBe(true);
+    });
+
     it("handles missing stat gracefully", () => {
       const r = formatUnitResult("bili_video_info", { data: { title: "无数据" } });
       expect(r.title).toBe("无数据");

@@ -65,6 +65,16 @@ const ANTI_CRAWL_RULES: Array<{
   },
   {
     test: (req) => {
+      const url = req.url.toLowerCase();
+      return url.includes("xsec_token") || url.includes("xsec_source");
+    },
+    category: "xhs_xsec_token",
+    severity: "low",
+    suggestion:
+      "小红书 xsec_token 反爬参数。可尝试从页面 HTML 或 __INITIAL_STATE__ 中提取后复用。若为空字符串可能被服务器忽略。",
+  },
+  {
+    test: (req) => {
       const body = JSON.stringify(req.requestBody ?? "");
       return body.includes("csrf") && !body.includes("csrf_token");
     },

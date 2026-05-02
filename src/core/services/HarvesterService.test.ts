@@ -72,7 +72,7 @@ describe("HarvesterService", () => {
 
     it("calls browser.launch with the target URL", async () => {
       await svc.harvest(MIN_CONFIG);
-      expect(browser.launch).toHaveBeenCalledWith("https://example.com", undefined);
+      expect(browser.launch).toHaveBeenCalledWith("https://example.com", undefined, undefined, undefined, undefined, undefined);
     });
 
     it("calls browser.close in finally", async () => {
@@ -89,7 +89,7 @@ describe("HarvesterService", () => {
         lastUsedAt: 0,
       };
       await svc.harvest(MIN_CONFIG, "all", false, undefined, undefined, sessionState);
-      expect(browser.launch).toHaveBeenCalledWith("https://example.com", sessionState);
+      expect(browser.launch).toHaveBeenCalledWith("https://example.com", sessionState, undefined, undefined, undefined, undefined);
     });
 
     it("throws BizError for empty targetUrl", async () => {

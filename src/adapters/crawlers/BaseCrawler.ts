@@ -52,7 +52,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
   abstract matches(url: string): boolean;
 
   /** 子类可在此注入站点特有的签名头（X-s、x-zse-96、wbi 等）。 */
-  protected addAuthHeaders(_headers: Record<string, string>, _url: string, _method: string, _body: string, _session?: CrawlerSession): void {}
+  protected addAuthHeaders(_headers: Record<string, string>, _url: string, _method: string, _body: string, _session?: CrawlerSession): void | Promise<void> {}
 
   /** 子类可自定义 Referer，默认使用当前 URL 的 origin。 */
   protected getReferer(url: string): string {
@@ -76,7 +76,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
     };
 
     // 子类签名钩子
-    this.addAuthHeaders(ctx.headers, url, method, reqBody, session);
+    await this.addAuthHeaders(ctx.headers, url, method, reqBody, session);
 
     if (method === "POST" && reqBody) {
       ctx.headers["Content-Type"] = options?.contentType ?? "application/json;charset=UTF-8";

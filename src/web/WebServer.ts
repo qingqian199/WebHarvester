@@ -27,7 +27,7 @@ import { BilibiliCrawler } from "../adapters/crawlers/BilibiliCrawler";
 import { TikTokCrawler } from "../adapters/crawlers/TikTokCrawler";
 import { PQueueTaskQueue } from "../adapters/PQueueTaskQueue";
 import { HarvestTask, ITaskQueue } from "../core/ports/ITaskQueue";
-import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS, TT_CONTENT_UNITS } from "../core/models/ContentUnit";
+import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS, TT_CONTENT_UNITS, BOSS_CONTENT_UNITS } from "../core/models/ContentUnit";
 import { validateUrl } from "../utils/url-validator";
 import { formatError } from "../core/error/error-registry";
 import { Router } from "./Router";
@@ -339,7 +339,7 @@ export class WebServer {
 
   private async handleApiRun(req: http.IncomingMessage, res: http.ServerResponse) {
     const body = await this.getBody(req);
-    const { url, profile } = JSON.parse(body);
+    const { url, profile, enhanced } = JSON.parse(body);
     try {
       validateUrl(url);
     } catch {
@@ -364,7 +364,10 @@ export class WebServer {
     const storage = new FileStorageAdapter(appCfg.outputDir);
     const svc = new HarvesterService(this.logger, browser, storage);
     await svc.harvest(
-      { targetUrl: url, networkCapture: { captureAll: true } },
+      {
+        targetUrl: url,
+        networkCapture: { captureAll: true, enhancedFullCapture: enhanced === true },
+      },
       "all",
       false,
       this.sessionManager,
@@ -695,6 +698,7 @@ export class WebServer {
       zhihu: ZHIHU_CONTENT_UNITS,
       bilibili: BILI_CONTENT_UNITS,
       tiktok: TT_CONTENT_UNITS,
+      boss_zhipin: BOSS_CONTENT_UNITS,
     };
     const units = map[site] ?? [];
     res.writeHead(200, { "Content-Type": "application/json" });

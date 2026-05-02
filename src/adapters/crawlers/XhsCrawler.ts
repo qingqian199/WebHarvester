@@ -61,22 +61,28 @@ export const XhsApiEndpoints: ReadonlyArray<XhsEndpointDef> = [
   { name: "系统配置", path: "/api/sns/web/v1/system/config", status: "verified" },
   { name: "区域列表", path: "/api/sns/web/v1/zones", status: "verified" },
   { name: "未读消息", path: "/api/sns/web/unread_count", status: "verified" },
+  { name: "收藏列表", path: "/api/sns/web/v1/board/user", params: "num=15&page=1", status: "verified" },
 
-  // ── ⛔ 触发风控（签名有效但被限，code=300011） ──
+  // ── ✅ 全量采集验证通过（浏览器端真实调用，code=0 含完整数据）──
   { name: "搜索笔记", path: "/api/sns/web/v1/search/notes", method: "POST",
     bodyTemplate: { keyword: "原神", page: 1, page_size: 20, search_id: "{search_id}", sort: "general", note_type: 0, ext_flags: [], image_formats: ["jpg", "webp", "avif"] },
-    status: "risk_ctrl" },
-
-  // ── 🔶 签名验证通过但 -1（需要浏览器级 SDK 注入的额外头）。使用 signature injection 经由浏览器调用可解决。──
+    status: "verified" },
   { name: "搜索一站式", path: "/api/sns/web/v1/search/onebox", method: "POST",
     bodyTemplate: { keyword: "原神", search_id: "{search_id}", biz_type: "web_search_user", request_id: "{request_id}" },
-    status: "sig_pending" },
-  { name: "搜索筛选", path: "/api/sns/web/v1/search/filter", params: "keyword=%E5%8E%9F%E7%A5%9E&search_id={search_id}", status: "sig_pending" },
-  { name: "收藏列表", path: "/api/sns/web/v1/board/user", params: "num=15&page=1", status: "sig_pending" },
+    status: "verified" },
+  { name: "搜索筛选", path: "/api/sns/web/v1/search/filter", params: "keyword=%E5%8E%9F%E7%A5%9E&search_id={search_id}", status: "verified" },
 
-  // ── 评论 ──
-  { name: "笔记评论", path: "/api/sns/web/v2/comment/page", params: "note_id={note_id}&cursor={cursor}&top_comment_id=&image_formats=jpg,webp,avif", status: "sig_pending" },
-  { name: "笔记子回复", path: "/api/sns/web/v2/comment/sub/page", params: "note_id={note_id}&comment_id={rpid}&cursor={cursor}&image_formats=jpg,webp,avif", status: "sig_pending" },
+  // ── 🔶 新增端点（全量捕获中发现，待验证签名兼容性）──
+  { name: "表情包详情", path: "/api/im/redmoji/detail", params: "keyword=", status: "sig_pending" },
+  { name: "表情包版本", path: "/api/im/redmoji/version", status: "sig_pending" },
+
+  // ── ⛔ 触发风控（签名有效但被限，code=300011） ──
+  { name: "首页信息流", path: "/api/sns/web/v1/homefeed", method: "POST",
+    bodyTemplate: { num: 30, cursor: "", image_formats: ["jpg", "webp", "avif"], need_filter: false },
+    status: "risk_ctrl" },
+
+  // ── 登录相关 ──
+  { name: "创建二维码", path: "/api/sns/web/v1/login/qrcode/create", method: "POST", status: "sig_pending" },
 ] as const;
 
 /**
@@ -146,6 +152,20 @@ export class XhsCrawler extends BaseCrawler {
   }
 
   /**
+   * 验证登录会话是否有效。优先使用 web_session / a1 cookie，通过 user/me 接口检测。
+   * @returns true 表示会话有效。
+   */
+  async validateSession(session: CrawlerSession): Promise<boolean> {
+    const hasSession = session.cookies.some(c => ["web_session", "a1", "sess", "session"].some(k => c.name.toLowerCase().includes(k)));
+    if (!hasSession) return false;
+    try {
+      const r = await this.fetchApi("用户信息", {}, session);
+      const d = JSON.parse(r.body);
+      return d.code === 0 && d.data?.user_id != null && d.data?.guest !== true;
+    } catch { return false; }
+  }
+
+  /**
    * 通过端点名称和参数执行 API 请求。
    * @param endpointName XhsApiEndpoints 中的 name。
    * @param params 查询参数字符串（如 "keyword=test"），不传则使用默认参数。
@@ -179,7 +199,7 @@ export class XhsCrawler extends BaseCrawler {
     // 自动补全：从 session 中提取 user_id（用于 board/user 等需要用户 ID 的端点）
     const mergedParams = { ...(ep.params ? Object.fromEntries(new URLSearchParams(ep.params)) : {}), ...params };
     if (!mergedParams.user_id && effectiveSession) {
-      const fromCookie = effectiveSession.cookies.find((c) => ["user_id", "uid", "userId"].some((k) => c.name.toLowerCase().includes(k)));
+      const fromCookie = effectiveSession.cookies.find((c) => ["user_id", "uid", "userId", "a1", "web_session"].some((k) => c.name.toLowerCase().includes(k)));
       if (fromCookie) mergedParams.user_id = fromCookie.value;
       if (!mergedParams.user_id && effectiveSession.localStorage?.user_id) mergedParams.user_id = effectiveSession.localStorage.user_id;
       if (!mergedParams.user_id) {
@@ -195,6 +215,12 @@ export class XhsCrawler extends BaseCrawler {
           } catch {}
         }
       }
+    }
+
+    // 自动注入 xsec_token 和 xsec_source 参数（笔记/用户/搜索端点需要）
+    if (!mergedParams.xsec_token && (ep.path.includes("note") || ep.path.includes("search") || ep.path.includes("user"))) {
+      mergedParams.xsec_source = "pc_feed";
+      mergedParams.xsec_token = "";
     }
 
     const method = ep.method ?? "GET";

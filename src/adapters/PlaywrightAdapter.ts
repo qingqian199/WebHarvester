@@ -17,8 +17,8 @@ export class PlaywrightAdapter implements IBrowserAdapter {
   }
 
   /** 启动浏览器并导航到 URL。可选的 pageSetup 回调在页面创建后、导航前调用。 */
-  async launch(url: string, sessionState?: SessionState, proxyUrl?: string, pageSetup?: (page: any) => Promise<void>): Promise<void> {
-    await this.lcm.launch(url, true, sessionState, "domcontentloaded", undefined, proxyUrl, pageSetup);
+  async launch(url: string, sessionState?: SessionState, proxyUrl?: string, pageSetup?: (page: any) => Promise<void>, enableFullCapture?: boolean, captureAllTypes?: boolean): Promise<void> {
+    await this.lcm.launch(url, true, sessionState, "domcontentloaded", undefined, proxyUrl, pageSetup, enableFullCapture, captureAllTypes);
   }
 
   /** 从已存在的 Browser Context 创建页面（浏览器池复用）。 */
@@ -60,9 +60,10 @@ export class PlaywrightAdapter implements IBrowserAdapter {
 
   async captureNetworkRequests(_config: {
     captureAll: boolean;
+    enhancedFullCapture?: boolean;
   }): Promise<NetworkRequest[]> {
     const page = this.lcm.getPage();
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {}); // 超时不阻塞采集
+    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
     await new Promise((r) => setTimeout(r, REQUEST_CAPTURE_EXTRA_WAIT_MS));
     return this.lcm.getCapturedRequests();
   }

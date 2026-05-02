@@ -9,9 +9,9 @@ export interface RateLimitConfig {
 
 export const DEFAULT_RATE_LIMIT_CONFIG: RateLimitConfig = {
   enabled: true,
-  minDelay: 500,
-  maxDelay: 1500,
+  minDelay: 1500,
+  maxDelay: 4000,
   cooldownMinutes: 10,
-  maxConcurrentSignatures: 2,
+  maxConcurrentSignatures: 1,
   maxConcurrentPages: 1,
 };

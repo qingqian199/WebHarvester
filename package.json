@@ -1,6 +1,6 @@
 {
   "name": "opencode",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "author": "qingqian",
   "license": "MIT",
   "description": "工程化Web逆向抓包、页面资产采集工具，低硬件适配+模块化解耦",

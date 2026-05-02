@@ -5,10 +5,12 @@ import { XhsCrawler } from "./adapters/crawlers/XhsCrawler";
 import { ZhihuCrawler } from "./adapters/crawlers/ZhihuCrawler";
 import { BilibiliCrawler } from "./adapters/crawlers/BilibiliCrawler";
 import { TikTokCrawler } from "./adapters/crawlers/TikTokCrawler";
+import { BossZhipinCrawler } from "./adapters/crawlers/BossZhipinCrawler";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
 import { RoundRobinProxyProvider } from "./adapters/RoundRobinProxyProvider";
 import { FeatureFlags, applyFeatureFlags } from "./core/features";
 import { IProxyProvider } from "./core/ports/IProxyProvider";
+import { configureBackendClient } from "./utils/backend-client";
 import { formatError } from "./core/error/error-registry";
 import { highlightTitle, errorLabel } from "./utils/cli-ui";
 import { startMainMenu, runAnalyzeFromMenu } from "./cli/main-menu";
@@ -43,6 +45,7 @@ function createCrawlerDispatcher(appCfg: Awaited<ReturnType<typeof loadAppConfig
   if (appCfg.crawlers?.zhihu === "enabled") d.register(new ZhihuCrawler(globalProxyProvider));
   if (appCfg.crawlers?.bilibili === "enabled") d.register(new BilibiliCrawler(globalProxyProvider));
   if (appCfg.crawlers?.tiktok === "enabled") d.register(new TikTokCrawler(globalProxyProvider));
+  if (appCfg.crawlers?.boss_zhipin === "enabled") d.register(new BossZhipinCrawler(globalProxyProvider));
   return d;
 }
 
@@ -58,6 +61,11 @@ async function bootstrap() {
 
   const appCfg = await loadAppConfig();
   if (appCfg.features) applyFeatureFlags(appCfg.features);
+
+  if (FeatureFlags.enableBackendService && appCfg.backendService) {
+    configureBackendClient(appCfg.backendService.baseUrl, appCfg.backendService.timeout);
+    console.log(`🔌 后端服务已启用: ${appCfg.backendService.baseUrl}`);
+  }
 
   if (FeatureFlags.enableProxyPool && appCfg.proxyPool) {
     globalProxyProvider = new RoundRobinProxyProvider(appCfg.proxyPool);
