@@ -18,15 +18,16 @@ export type MenuAction =
     | { type: "toggle-features" }
     | { type: "exit" };
 
-export async function startMainMenu(): Promise<MenuAction> {
+export async function startMainMenu(statusLine?: string): Promise<MenuAction> {
     const appCfg = await loadAppConfig();
     const enabledCrawlers = Object.entries(appCfg.crawlers ?? {})
         .filter(([, v]) => v === "enabled")
         .map(([k]) => k);
 
+    const menuMessage = statusLine ? `🌐 WebHarvester 主菜单${statusLine}` : "🌐 WebHarvester 主菜单";
     const { action } = await inquirer.prompt([
         {
-            type: "list", name: "action", message: "🌐 WebHarvester 主菜单",
+            type: "list", name: "action", message: menuMessage,
             choices: [
                 new inquirer.Separator(" 📌 采集模式"),
                 { name: "  1. 通用站点探测", value: "single" },
