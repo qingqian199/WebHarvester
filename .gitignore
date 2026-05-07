@@ -4,6 +4,7 @@ dist/
 output/
 sessions/
 coverage/
+chrome-data/
 benchmark/results/
 *.log
 .env
