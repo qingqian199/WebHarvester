@@ -1,0 +1,8 @@
+# .git-blame-ignore-revs
+# 使用方式: git blame --ignore-revs-file .git-blame-ignore-revs <file>
+#
+# 以下提交是批量格式化或大规模重构，不反映实际逻辑变更，
+# git blame 时应跳过它们以便定位真正的代码作者。
+
+# TODO: 添加重构提交的哈希值，如:
+# abcdef1234567890abcdef1234567890abcdef12  # ESLint --fix 批量修复
