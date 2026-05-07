@@ -1,6 +1,9 @@
 import "source-map-support/register";
+import fs from "fs";
+import path from "path";
 import { loadAppConfig } from "./utils/config-loader";
 import { ConsoleLogger } from "./adapters/ConsoleLogger";
+import { BaseCrawler } from "./adapters/crawlers/BaseCrawler";
 import { XhsCrawler } from "./adapters/crawlers/XhsCrawler";
 import { ZhihuCrawler } from "./adapters/crawlers/ZhihuCrawler";
 import { BilibiliCrawler } from "./adapters/crawlers/BilibiliCrawler";
@@ -28,10 +31,55 @@ import { handleToggleFeatures } from "./cli/handlers/toggle-features";
 import { CliAction } from "./cli/types";
 
 let globalProxyProvider: IProxyProvider | undefined;
+let chromeServiceInstance: import("./services/ChromeService").ChromeService | null = null;
+
+export let lastCapture: { site: string; url: string; units: string[] } | null = null;
+
+export function setLastCapture(site: string, url: string, units: string[]): void {
+  lastCapture = { site, url, units };
+}
+
+function buildStatusLine(): string {
+  const parts: string[] = [];
+  if (FeatureFlags.enableChromeService) parts.push("🔗 ChromeService");
+  if (FeatureFlags.enableProxyPool) {
+    const proxyOk = globalProxyProvider?.enabled && (globalProxyProvider.enabledCount ?? 0) > 0;
+    parts.push(proxyOk ? "🟢 代理池" : "🔴 代理池");
+  }
+  try {
+    const outDir = path.resolve("output");
+    if (fs.existsSync(outDir)) {
+      const dirs = fs.readdirSync(outDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+      let newest: { file: string; mtime: Date } | null = null;
+      for (const dir of dirs) {
+        const dirPath = path.join(outDir, dir.name);
+        const files = fs.readdirSync(dirPath).filter((f) => f.endsWith(".json") || f.endsWith(".har"));
+        for (const f of files) {
+          const fp = path.join(dirPath, f);
+          const st = fs.statSync(fp);
+          if (!newest || st.mtime > newest.mtime) newest = { file: dir.name, mtime: st.mtime };
+        }
+      }
+      if (newest) { const ago = Math.floor((Date.now() - newest.mtime.getTime()) / 60000); parts.push(`📁 最近采集: ${ago}分钟前 (${newest.file})`); }
+    }
+  } catch {}
+  try {
+    const sessionDir = path.resolve("sessions");
+    if (fs.existsSync(sessionDir)) {
+      const count = fs.readdirSync(sessionDir).filter((f) => f.endsWith(".session.json") || f.endsWith(".json")).length;
+      if (count > 0) parts.push(`🔐 ${count}个会话`);
+    }
+  } catch {}
+  return parts.length > 0 ? " " + parts.join(" | ") : "";
+}
 
 function registerShutdown() {
   const handle = async () => {
     console.log("\n\n⚠️  正在优雅关闭...");
+    if (chromeServiceInstance) {
+      chromeServiceInstance.stop();
+      chromeServiceInstance = null;
+    }
     stopActiveWebServer();
     process.exit(0);
   };
@@ -75,13 +123,30 @@ async function bootstrap() {
     globalProxyProvider.startHealthCheck();
   }
 
+  if (FeatureFlags.enableChromeService && appCfg.chromeService) {
+    const { ChromeService } = await import("./services/ChromeService");
+    chromeServiceInstance = new ChromeService(appCfg.chromeService.port, appCfg.chromeService.chromePath, appCfg.chromeService.userDataDir);
+    chromeServiceInstance.start().then(async () => {
+      BaseCrawler.chromeServicePort = chromeServiceInstance!.port;
+      try {
+        const { registerCdpBrowser } = await import("./services/BrowserProvider");
+        await registerCdpBrowser(chromeServiceInstance!.port);
+        console.log(`✅ ChromeService 已就绪 (端口 ${chromeServiceInstance!.port})`);
+      } catch (e: any) {
+        console.error(`❌ ChromeService CDP 注册失败: ${e.message}`);
+      }
+    }).catch(() => {
+      console.error("❌ ChromeService 启动失败");
+    });
+  }
+
   const logger = new ConsoleLogger();
   const dispatcher = createCrawlerDispatcher(appCfg);
   const deps = { config: appCfg, logger, dispatcher, proxyProvider: globalProxyProvider };
 
   let running = true;
   while (running) {
-    const action = await startMainMenu();
+    const action = await startMainMenu(buildStatusLine());
 
     switch (action.type) {
       case "exit":

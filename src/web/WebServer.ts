@@ -281,6 +281,7 @@ export class WebServer {
       );
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: 0, data: { token, expiresIn: JWT_EXPIRES_IN } }));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: -1, msg: e.message }));
@@ -305,6 +306,7 @@ export class WebServer {
     queue.setProcessor(async (task: HarvestTask) => {
       const session = task.sessionName ? await this.sessionManager.load(task.sessionName) : null;
       const crawlerFactory = () => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         const map: Record<string, any> = {
           xiaohongshu: new XhsCrawler(),
           zhihu: new ZhihuCrawler(),
@@ -389,6 +391,7 @@ export class WebServer {
     res.end(JSON.stringify({ code: 0, msg: "批量采集完成" }));
   }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   private sessionContext: { lcm: any; page: any; profile: string; loginUrl: string } | null = null;
 
   private async handleApiQrcode(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -449,6 +452,7 @@ export class WebServer {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ code: 0, data: { profile, loginUrl, sessionId: profile } }));
       }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: -1, msg: e.message }));
@@ -465,6 +469,7 @@ export class WebServer {
         if (this.sessionContext?.profile === profile) this.sessionContext = null;
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ code: 0, msg: `会话已保存为 [${profile}]` }));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ code: -1, msg: e.message }));
@@ -507,6 +512,7 @@ export class WebServer {
           userInfo: { name: userName, domain: new URL(loginUrl).hostname },
         },
       }));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: -1, msg: e.message }));
@@ -531,6 +537,7 @@ export class WebServer {
   private async handleApiQrcodeCleanup(req: http.IncomingMessage, res: http.ServerResponse) {
     if (this.sessionContext) {
       try { await this.sessionContext.page.context().close(); } catch (err) { this.logger.warn("QR cleanup page close failed", { err: (err as Error).message }); }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       try { (this.sessionContext.lcm as any).close(); } catch (err) { this.logger.warn("QR cleanup lcm close failed", { err: (err as Error).message }); }
       this.sessionContext = null;
     }
@@ -733,6 +740,7 @@ export class WebServer {
         "Content-Disposition": "attachment; filename=harvest.xlsx",
       });
       res.end(buf);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: -1, msg: e.message }));
@@ -743,6 +751,7 @@ export class WebServer {
     const body = JSON.parse(await this.getBody(req));
     const { units, results } = body;
     if (units && Array.isArray(units)) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       const formatted = units.map((u: any) => formatUnitResult(u.unit || u.id, u.data));
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: 0, data: formatted }));
@@ -775,12 +784,14 @@ export class WebServer {
       }
     }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     let session: any = undefined;
     if (sessionName) {
       const state = await this.sessionManager.load(sessionName);
       if (state) session = { cookies: state.cookies, localStorage: state.localStorage };
     }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const crawlerMap: Record<string, any> = {
       xiaohongshu: new XhsCrawler(),
       zhihu: new ZhihuCrawler(),
@@ -797,6 +808,7 @@ export class WebServer {
       const results = await crawler.collectUnits(units, userParams || {}, session, authMode);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: 0, data: results }));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       res.writeHead(500, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ code: -1, msg: e.message }));

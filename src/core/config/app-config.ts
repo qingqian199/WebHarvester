@@ -64,6 +64,11 @@ const ConfigSchema = z.object({
     baseUrl: z.string().default("http://localhost:3001"),
     timeout: z.number().int().positive().default(30000),
   }).optional(),
+  chromeService: z.object({
+    port: z.number().int().positive().default(9222),
+    chromePath: z.string().optional(),
+    userDataDir: z.string().optional(),
+  }).optional(),
 });
 
 export type ValidatedConfig = z.infer<typeof ConfigSchema>;
@@ -105,6 +110,11 @@ export interface AppConfig {
   jwtSecret?: string;
   users?: Array<{ username: string; passwordHash: string; role?: string }>;
   encrypted?: { masterKey?: string; algorithm?: string };
+  chromeService?: {
+    port: number;
+    chromePath?: string;
+    userDataDir?: string;
+  };
 }
 
 export interface BatchTaskItem {

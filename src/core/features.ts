@@ -12,6 +12,8 @@ export interface FeatureFlagSet {
   enableProxyPool: boolean;
   enableFullCaptureMode: boolean;
   enableFullCaptureEnhanced: boolean;
+  /** ChromeService CDP 直连模式 */
+  enableChromeService: boolean;
   /** 将浏览器令牌/签名服务分离到独立后端进程 */
   enableBackendService: boolean;
   /** @deprecated Not yet implemented, must be false */
@@ -38,6 +40,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlagSet = {
   enableProxyPool: false,
   enableFullCaptureMode: false,
   enableFullCaptureEnhanced: false,
+  enableChromeService: false,
 };
 
 export const FeatureFlags: FeatureFlagSet = { ...DEFAULT_FEATURE_FLAGS };
