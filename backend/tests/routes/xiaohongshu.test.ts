@@ -20,9 +20,10 @@ describe("Xiaohongshu API Routes", () => {
   });
 
   describe("POST /api/xiaohongshu/sign", () => {
-    it("returns 501 when no service configured", async () => {
+    it("returns placeholder when no service configured", async () => {
       const res = await request(app).post("/api/xiaohongshu/sign").send({ apiPath: "/api/test" });
-      expect(res.status).toBe(501);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("not_implemented");
     });
   });
 });
