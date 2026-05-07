@@ -17,6 +17,19 @@ export interface BackendHealthResponse {
   services: Record<string, string>;
 }
 
+export interface ProxyStatusResponse {
+  enabled: boolean;
+  totalProxies: number;
+  availableProxies: number;
+  mode: string;
+  configured: boolean;
+  reason?: string;
+}
+
+export interface RateLimitStatusResponse {
+  sites: Record<string, { successRate: number; isPaused: boolean; backoffLevel: number }>;
+}
+
 export function configureBackendClient(baseUrl: string, timeout: number): void {
   _baseUrl = baseUrl.replace(/\/+$/, "");
   _timeout = timeout;
@@ -49,6 +62,8 @@ async function request<T>(path: string, options?: { method?: string; body?: unkn
   }
 }
 
+// ── BOSS 直聘 ──
+
 export async function getBossToken(): Promise<BossTokenResponse> {
   return request<BossTokenResponse>("/api/boss/token");
 }
@@ -61,6 +76,46 @@ export async function getBossHealth(): Promise<{ status: string; ready: boolean;
   return request("/api/boss/health");
 }
 
+// ── 全局 ──
+
 export async function getBackendHealth(): Promise<BackendHealthResponse> {
   return request<BackendHealthResponse>("/health");
+}
+
+// ── 代理池 ──
+
+export async function getProxyStatus(): Promise<ProxyStatusResponse> {
+  return request<ProxyStatusResponse>("/api/proxy/status");
+}
+
+export async function triggerProxyHealthCheck(): Promise<{ ok: boolean; checked: number; available: number }> {
+  return request("/api/proxy/healthcheck", { method: "POST" });
+}
+
+// ── 限流 ──
+
+export async function getRateLimitStatus(): Promise<RateLimitStatusResponse> {
+  return request<RateLimitStatusResponse>("/api/ratelimit/status");
+}
+
+// ── 抖音签名 ──
+
+export async function getDouyinHealth(): Promise<{ status: string; cachedSignatures: number }> {
+  return request("/api/douyin/health");
+}
+
+export async function getDouyinSignature(endpoint: string): Promise<{ endpoint: string; signature: any }> {
+  return request(`/api/douyin/sign?endpoint=${encodeURIComponent(endpoint)}`);
+}
+
+// ── 小红书签名 ──
+
+export async function xhsSignRequest(payload: { apiPath: string; data?: string; cookies?: string; userAgent?: string; platform?: string }): Promise<any> {
+  return request("/api/xiaohongshu/sign", { method: "POST", body: payload });
+}
+
+// ── TikTok 签名 ──
+
+export async function ttSignRequest(payload: { url: string; method?: string; body?: string; headers?: Record<string, string>; cookie?: string }): Promise<any> {
+  return request("/api/tiktok/sign", { method: "POST", body: payload });
 }

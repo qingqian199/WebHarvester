@@ -33,6 +33,7 @@ describe("BOSS API Routes", () => {
     stokenRefreshMs: 60000,
     bootstrapUrl: "https://www.zhipin.com/web/geek/jobs",
     headless: true,
+    douyinSignEnabled: false,
   };
 
   let app: express.Express;

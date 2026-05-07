@@ -4,6 +4,7 @@ export interface BackendConfig {
   stokenRefreshMs: number;
   bootstrapUrl: string;
   headless: boolean;
+  douyinSignEnabled: boolean;
 }
 
 export const DEFAULT_CONFIG: BackendConfig = {
@@ -12,6 +13,7 @@ export const DEFAULT_CONFIG: BackendConfig = {
   stokenRefreshMs: 25 * 60 * 1000,
   bootstrapUrl: "https://www.zhipin.com/web/geek/jobs",
   headless: true,
+  douyinSignEnabled: true,
 };
 
 export function loadConfig(): BackendConfig {
@@ -22,5 +24,6 @@ export function loadConfig(): BackendConfig {
     stokenRefreshMs: parseInt(env.STOKEN_REFRESH_MS ?? "", 10) || DEFAULT_CONFIG.stokenRefreshMs,
     bootstrapUrl: env.BOOTSTRAP_URL || DEFAULT_CONFIG.bootstrapUrl,
     headless: env.HEADLESS !== "false",
+    douyinSignEnabled: env.DOUYIN_SIGN_ENABLED !== "false",
   };
 }
