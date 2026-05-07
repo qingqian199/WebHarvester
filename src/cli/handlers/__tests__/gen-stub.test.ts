@@ -1,0 +1,1 @@
+jest.mock("inquirer",()=>({default:{prompt:jest.fn()}}));jest.mock("fs/promises");jest.mock("../../../utils/crawl-ops/stub-generator");import { handleGenStub } from "../gen-stub";describe("handleGenStub",()=>{it("ģ��ɼ���",()=>{expect(typeof handleGenStub).toBe("function");});});

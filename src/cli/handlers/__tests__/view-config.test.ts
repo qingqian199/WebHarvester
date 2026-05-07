@@ -1,0 +1,1 @@
+import { handleViewConfig } from "../view-config";describe("handleViewConfig",()=>{it("ģ��ɼ���",()=>{expect(typeof handleViewConfig).toBe("function");});});

@@ -1,0 +1,1 @@
+jest.mock("../../../adapters/FileSessionManager");jest.mock("../../../utils/login-oracle");jest.mock("inquirer",()=>({prompt:jest.fn()}));import { handleAccountLogin } from "../account-login";describe("handleAccountLogin",()=>{it("ģ��ɼ�����Ϊ����",()=>{expect(typeof handleAccountLogin).toBe("function");});});

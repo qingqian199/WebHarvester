@@ -1,0 +1,1 @@
+import { handleViewSessions } from "../view-sessions";describe("handleViewSessions",()=>{it("ģ��ɼ���",()=>{expect(typeof handleViewSessions).toBe("function");});});

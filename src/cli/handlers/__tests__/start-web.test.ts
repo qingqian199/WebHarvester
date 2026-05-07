@@ -1,0 +1,1 @@
+import { handleStartWeb } from "../start-web";describe("handleStartWeb",()=>{it("ģ��ɼ���",()=>{expect(typeof handleStartWeb).toBe("function");});});

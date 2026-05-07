@@ -1,0 +1,1 @@
+jest.mock("inquirer",()=>({default:{prompt:jest.fn()}}));jest.mock("../../../adapters/FileSessionManager");jest.mock("../../../adapters/PlaywrightAdapter");import { handleQuickArticle } from "../quick-article";describe("handleQuickArticle",()=>{it("ģ��ɼ���",()=>{expect(typeof handleQuickArticle).toBe("function");});});
