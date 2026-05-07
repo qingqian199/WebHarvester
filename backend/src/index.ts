@@ -43,20 +43,20 @@ async function main(): Promise<void> {
   const PORT = config.port;
   app.listen(PORT, config.host, () => {
     console.log(`[WebHarvester Backend] 服务已启动 → http://${config.host}:${PORT}`);
-    console.log(`[WebHarvester Backend] BOSS 令牌服务初始化中...`);
+    console.log("[WebHarvester Backend] BOSS 令牌服务初始化中...");
   });
 
   tokenService.start()
     .then(() => {
-      console.log(`[WebHarvester Backend] BOSS 令牌服务已就绪`);
+      console.log("[WebHarvester Backend] BOSS 令牌服务已就绪");
       console.log(`[WebHarvester Backend] stoken=${tokenService.stoken ? "✓" : "✗"} traceid=${tokenService.traceid ? "✓" : "✗"} cookies=${Object.keys(tokenService.cookies).length}个`);
     })
     .catch((err: Error) => {
-      console.error(`[WebHarvester Backend] BOSS 令牌服务启动失败:`, err.message);
+      console.error("[WebHarvester Backend] BOSS 令牌服务启动失败:", err.message);
     });
 }
 
 main().catch((err) => {
-  console.error(`[WebHarvester Backend] 启动失败:`, err);
+  console.error("[WebHarvester Backend] 启动失败:", err);
   process.exit(1);
 });
