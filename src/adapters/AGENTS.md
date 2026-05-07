@@ -10,6 +10,12 @@
 - Uses round-robin assignment (index % pool.length).
 - Enable via `config.json` → `proxyPool.enabled` and `FeatureFlags.enableProxyPool`.
 
+## PlaywrightAdapter.connectToChromeService
+- `connectToChromeService()` must start with MINIMAL capture (`false, false`) — the user's mode choice (quick/full/enhanced) is applied later by `launch()` → CDP branch → `disableNetworkCapture()` + `startNetworkCapture(enableFullCapture, captureAllTypes)`.
+- Previously hardcoded `true, true` (enhanced), which meant the captcha wait happened during minimal capture, and enhanced reconfiguration happened AFTER the page finished loading — so no API calls were captured for captcha-bypassed pages.
+- The fix: `attachToContext(..., false, false)` + `waitForSiteContent()` moved to CDP `launch()` branch (AFTER reconfiguration).
+- Session state (cookies) from existing Chrome tabs is inherited via `browser.contexts()[0]`, NOT via a new context. Use `cdp.newPage()` or `ctx.newPage()` on the existing context.
+
 ## PQueueTaskQueue
 - In-memory priority queue with configurable concurrency (default 2).
 - Tasks sorted by `priority` field (lower = higher priority).

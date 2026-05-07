@@ -26,8 +26,9 @@
 
 ## FeatureFlags from config.json
 - FeatureFlags are now loaded from `config.json` via `applyFeatureFlags(appCfg.features)` at bootstrap, not hardcoded.
-- 4 unimplemented flags (`enableParallelTask`, `enableBrowserPool`, `enableProxyPool`, `enableDaemonProcess`) are forced to `false` after loading.
-- `handleToggleFeaturesAction` persists changes back to `config.json`.
+- `config.json` `features` MUST be an object (`{ "enableChromeService": true }`), NOT a boolean `true`. A boolean `true` causes Zod schema validation to fail silently, leaving all flags at their defaults.
+- `chromeService` config section must exist for `bootstrap()` to start ChromeService: `if (FeatureFlags.enableChromeService && appCfg.chromeService)` — if `appCfg.chromeService` is undefined, ChromeService won't start even if the flag is true.
+- Old/removed FeatureFlags (`enableParallelTask`, `enableBrowserPool`, `enableDaemonProcess`) in config.json are silently ignored by `applyFeatureFlags` (only iterates over `DEFAULT_FEATURE_FLAGS` keys).
 
 ## QR Login Modes
 - CLI QR login has two modes: (1) **manual** (default): opens browser, waits for user to press Enter, captures session, asks "save?"; (2) **auto-save**: polls for auth cookie automatically, saves immediately. Enable auto-save via `--auto-save` CLI arg or `config.json` → `auth.qrLoginAutoSave: true`.

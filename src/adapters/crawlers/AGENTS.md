@@ -80,6 +80,24 @@
 - **`__INITIAL_STATE__` Circular References**: The page state object has circular refs (property `'sub'` closes the circle). NEVER directly access deep sub-objects. Use `safeExtractInitialState(browser)` from `src/utils/safe-serialize.ts` which uses string-path based safe access (`get(obj, 'note.noteDetailMap')`) with null checks at every path segment.
 - **Three ways to extract INITIAL_STATE**: (1) browser-side flat extraction (only primitives, safe), (2) `page.content()` regex extraction from HTML script tag, (3) DOM fallback. All three fail → `{}`.
 - **Author ID from explore URL**: When input is an explore URL and user_id is needed, `collectUnits` first executes `note_detail`, extracts `userId` from the result, then injects it into params for `user_info`/`user_posts`.
+- **Comment API response format is `{ data: { comments, cursor: string, has_more: boolean } }`**, NOT `{ data: { comments, cursor: { next, is_end } } }`. The old code expected `cursor.next`/`cursor.is_end` which don't exist. Correct field: `data.has_more` as boolean, `data.cursor` as plain string.
+- **Comment API requires `xsec_token` in URL**. Without it, the page returns 404/access denied. The `xsec_token` is extracted from the page URL. When calling the API, append `&xsec_token=...` and `&xsec_source=...` query parameters.
+- **`page.evaluate(() => fetch(url))` generates invalid X-s signatures** (returns code 300011). Even though `window.fetch` IS patched by the page's JS, the patched version produces wrong signatures in evaluate context. Only the page's own internal API client generates valid signatures. Fix: use `XMLHttpRequest` inside `page.evaluate` (circumvents the broken fetch polyfill), or intercept the page's own API calls via `page.on("response")`.
+- **`node_fetch_1 is not defined` error**: The XHS page's webpack bundle wraps `fetch` with a conditional `require("node-fetch")` that fails in browser `page.evaluate` context. Using `XMLHttpRequest` avoids this entirely.
+- **Page only loads 10 top-level comments automatically**. It does NOT provide UI for loading more. The remaining 1241+ comments require API-level cursor pagination with valid X-s signatures. Since `page.evaluate(fetch)` can't generate valid signatures, use `page.waitForResponse()` to intercept the page's own API calls, or extract from `__INITIAL_STATE__` if available.
+- **commentTarget is a Vue 3 ref** (`__v_isRef`, `_value`), not a plain object. The initial SSR data (`__INITIAL_STATE__`) does NOT contain comments — comments are loaded via API after client hydration.
+
+## Common: page.evaluate fetch vs XMLHttpRequest
+- Some Chinese SPA sites (Xiaohongshu, etc.) patch `window.fetch` with webpack wrappers that reference Node.js modules. Calling `fetch()` inside `page.evaluate` fails with `node_fetch_1 is not defined`.
+- **Fix**: Use `XMLHttpRequest` instead of `fetch` in `page.evaluate` blocks:
+  ```typescript
+  const xhr = new XMLHttpRequest();
+  xhr.open("GET", url, true);
+  xhr.withCredentials = true;
+  xhr.onload = () => resolve(JSON.parse(xhr.responseText));
+  xhr.send();
+  ```
+- This was fixed in `BaseCrawler.browserFetch()` — the method now uses XHR instead of fetch.
 
 ## Zhihu-Specific
 - `/api/v4/me` and `/api/v4/members/{id}` work with x-zse-96 signature (verified).

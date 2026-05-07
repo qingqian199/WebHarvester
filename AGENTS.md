@@ -4,6 +4,12 @@
 - **严禁执行版本回退命令**：`git checkout -- .`、`git reset --hard`、`git restore .` 等会丢弃未提交的工作区修改。如有需要清理临时文件，用 `git clean -fd` 而非 `git checkout -- .`。
 - 新的未跟踪文件（如 `src/services/ChromeService.ts`、测试文件等）必须及时 `git add` 并 `git commit`，防止因工作区清理而永久丢失。
 - 所有修改应该通过小步提交（每完成一个独立功能即提交），而非累积大量未提交修改。
+- **文件只存在于编辑缓冲区未写入磁盘是无效的**：如果对 `write` 工具的调用失败或被跳过，文件不算创建。提交后务必检查 `git status` 确认文件确实被跟踪。
+
+## Pre-commit Hooks
+- 项目配置了 husky + lint-staged 作为 pre-commit 钩子。提交前自动运行 `eslint --fix`。
+- 如果 lint-staged 失败（例如未使用的 import），提交会被阻止。需要手动修复后重新 `git commit`。
+- 一次性文件创建（如 `Set-Content` 在 PowerShell 中）可能因编码问题导致 lint 错误。用 `write` 工具而非 shell 命令创建 .ts 文件。
 
 ## ESLint
 - ESLint 9 requires `eslint.config.js` (flat config), not `.eslintrc.json`. The `typescript-eslint` v8 meta-package (`npm install typescript-eslint`) is needed for flat config.
