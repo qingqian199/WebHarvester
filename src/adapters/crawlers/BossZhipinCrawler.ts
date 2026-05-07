@@ -55,13 +55,42 @@ export class BossZhipinCrawler extends BaseCrawler {
       maxConcurrentSignatures: 1,
       maxConcurrentPages: 1,
     });
-    this.buildBossPipeline();
+    this.registerHandlers();
+  }
 
-    if (!FeatureFlags.enableBackendService) {
-      this.tokenManager.start().catch((e) =>
-        this.logger.warn("BOSS 令牌服务启动失败", { err: (e as Error).message }),
-      );
-    }
+  private registerHandlers(): void {
+    this.unitHandlers.set("boss_city_list", async (unit, _params, session) => {
+      const r = await this.fetchApi("城市列表", {}, session); const d = JSON.parse(r.body);
+      return { unit, status: d.code === 0 ? "success" as const : "failed" as const, data: d, method: "signature", responseTime: r.responseTime, error: d.code !== 0 ? `业务错误码: ${d.code}` : undefined };
+    });
+    this.unitHandlers.set("boss_city_site", async (unit, _params, session) => {
+      const r = await this.fetchApi("城市站点", {}, session); const d = JSON.parse(r.body);
+      return { unit, status: d.code === 0 ? "success" as const : "failed" as const, data: d, method: "signature", responseTime: r.responseTime };
+    });
+    this.unitHandlers.set("boss_filter_conditions", async (unit, _params, session) => {
+      const r = await this.fetchApi("职类筛选条件", {}, session); const d = JSON.parse(r.body);
+      return { unit, status: d.code === 0 ? "success" as const : "failed" as const, data: d, method: "signature", responseTime: r.responseTime };
+    });
+    this.unitHandlers.set("boss_industry_filter", async (unit, _params, session) => {
+      const r = await this.fetchApi("行业过滤列表", {}, session); const d = JSON.parse(r.body);
+      return { unit, status: d.code === 0 ? "success" as const : "failed" as const, data: d, method: "signature", responseTime: r.responseTime };
+    });
+    this.unitHandlers.set("boss_search", async (unit, params, session) => {
+      const keyword = params.keyword || "";
+      if (!keyword) return { unit, status: "failed" as const, data: null, method: "none" as const, error: "缺少 keyword", responseTime: 0 };
+      const r = await this.fetchApi("搜索职位", { keyword, page: params.page || "1", city: params.city || "101010100" }, session);
+      const d = JSON.parse(r.body);
+      if (d.code === 0) return { unit, status: "success" as const, data: d, method: "signature", responseTime: r.responseTime };
+      if (d.code === 7) return { unit, status: "failed" as const, data: d, method: "signature", responseTime: r.responseTime, error: "登录态失效，需要重新引导会话" };
+      const fb = await this.fetchPageData("搜索职位", params, session);
+      return { unit, status: "partial" as const, data: JSON.parse(fb.body), method: "html_extract", responseTime: fb.responseTime };
+    });
+    this.unitHandlers.set("boss_job_detail", async (unit, params, session) => {
+      const jobId = params.jobId || "";
+      if (!jobId) return { unit, status: "failed" as const, data: null, method: "none" as const, error: "缺少 jobId", responseTime: 0 };
+      const r = await this.fetchApi("职位详情", { jobId }, session); const d = JSON.parse(r.body);
+      return { unit, status: d.code === 0 ? "success" as const : "failed" as const, data: d, method: "signature", responseTime: r.responseTime };
+    });
   }
 
   private buildBossPipeline(): void {
@@ -163,58 +192,7 @@ export class BossZhipinCrawler extends BaseCrawler {
     for (const unit of units) {
       const start = Date.now();
       try {
-        switch (unit) {
-          case "boss_city_list": {
-            const r = await this.fetchApi("城市列表", {}, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "failed", data: d, method: "signature", responseTime: r.responseTime, error: d.code !== 0 ? `业务错误码: ${d.code}` : undefined });
-            break;
-          }
-          case "boss_city_site": {
-            const r = await this.fetchApi("城市站点", {}, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "failed", data: d, method: "signature", responseTime: r.responseTime });
-            break;
-          }
-          case "boss_filter_conditions": {
-            const r = await this.fetchApi("职类筛选条件", {}, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "failed", data: d, method: "signature", responseTime: r.responseTime });
-            break;
-          }
-          case "boss_industry_filter": {
-            const r = await this.fetchApi("行业过滤列表", {}, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "failed", data: d, method: "signature", responseTime: r.responseTime });
-            break;
-          }
-          case "boss_search": {
-            const keyword = params.keyword || "";
-            const city = params.city || "101010100";
-            if (!keyword) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 keyword", responseTime: 0 }); break; }
-            const r = await this.fetchApi("搜索职位", { keyword, page: params.page || "1", city }, session);
-            const d = JSON.parse(r.body);
-            if (d.code === 0) {
-              results.push({ unit, status: "success", data: d, method: "signature", responseTime: r.responseTime });
-            } else if (d.code === 7) {
-              results.push({ unit, status: "failed", data: d, method: "signature", responseTime: r.responseTime, error: "登录态失效，需要重新引导会话" });
-            } else {
-              const fb = await this.fetchPageData("搜索职位", params, session);
-              results.push({ unit, status: "partial", data: JSON.parse(fb.body), method: "html_extract", responseTime: fb.responseTime });
-            }
-            break;
-          }
-          case "boss_job_detail": {
-            const jobId = params.jobId || "";
-            if (!jobId) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 jobId", responseTime: 0 }); break; }
-            const r = await this.fetchApi("职位详情", { jobId }, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "failed", data: d, method: "signature", responseTime: r.responseTime });
-            break;
-          }
-          default:
-            results.push({ unit, status: "failed", data: null, method: "none", error: "未知单元", responseTime: 0 });
-        }
+        results.push(await this.dispatchUnit(unit, params, session));
       } catch (e: unknown) {
         results.push({ unit, status: "failed", data: null, method: "none", error: e instanceof Error ? e.message : String(e), responseTime: Date.now() - start });
       }

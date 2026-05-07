@@ -450,56 +450,27 @@ export class XhsCrawler extends BaseCrawler {
           case "note_sub_replies": {
             const nid = params.note_id || "";
             if (!nid) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 note_id", responseTime: 0 }); break; }
-            const root = params.root || "";
             const maxSub = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
-
+            const root = params.root || "";
+            let rootItems: any[];
             if (root) {
-              let allReplies: any[] = [];
-              let totalTime = 0;
-              let cursor = "0";
-              for (let page = 0; page < maxSub; page++) {
-                try {
-                  const r = await this.fetchApi("笔记子回复", { note_id: nid, rpid: root, cursor }, session);
-                  const d = JSON.parse(r.body);
-                  totalTime += r.responseTime;
-                  if (d.code === 0 && d.data?.comments) {
-                    allReplies = allReplies.concat(d.data.comments);
-                    if (d.data.cursor?.is_end) break;
-                    cursor = d.data.cursor?.next || "0";
-                  } else break;
-                } catch { break; }
-              }
-              results.push({ unit, status: "success", data: { code: 0, data: { comments: { [root]: { replies: allReplies, all_count: allReplies.length } }, total_replies: allReplies.length, expanded_count: allReplies.length > 0 ? 1 : 0 } }, method: "signature", responseTime: totalTime });
+              rootItems = [{ id: root }];
             } else {
               const commentsResult: any = results.find((r) => r.unit === "note_comments" && r.status === "success");
               if (!commentsResult) { results.push({ unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「笔记评论」采集单元", responseTime: 0 }); break; }
-              const topComments: any[] = commentsResult.data?.data?.comments || [];
-              const rpids = topComments.map((r: any) => String(r.id)).filter(Boolean);
-              if (rpids.length === 0) { results.push({ unit, status: "success", data: { code: 0, data: { comments: {}, total_replies: 0, expanded_count: 0 } }, method: "signature", responseTime: 0 }); break; }
-              const target = rpids.slice(0, 100);
-              const rpidResults = await this.runWithConcurrency(target, 3, async (rpid: string) => {
-                await new Promise((r2) => setTimeout(r2, 500));
-                let replies: any[] = [];
-                let t = 0;
-                let c = "0";
-                for (let p = 0; p < maxSub; p++) {
-                  try {
-                    const r = await this.fetchApi("笔记子回复", { note_id: nid, rpid, cursor: c }, session);
-                    const d = JSON.parse(r.body);
-                    t += r.responseTime;
-                    if (d.code === 0 && d.data?.comments) { replies = replies.concat(d.data.comments); if (d.data.cursor?.is_end) break; c = d.data.cursor?.next || "0"; } else break;
-                  } catch { break; }
-                }
-                return { rpid, replies, all_count: replies.length, subReplyTime: t };
-              });
-              const byRpid: Record<string, any> = {};
-              let totalReplies = 0;
-              let expandedCount = 0;
-              for (const rr of rpidResults) {
-                if (rr.all_count > 0) { byRpid[rr.rpid] = { replies: rr.replies, all_count: rr.all_count }; totalReplies += rr.all_count; expandedCount++; }
-              }
-              results.push({ unit, status: "success", data: { code: 0, data: { comments: byRpid, total_replies: totalReplies, expanded_count: expandedCount } }, method: "signature", responseTime: rpidResults.reduce((s, r) => s + r.subReplyTime, 0) });
+              rootItems = commentsResult.data?.data?.comments || [];
+              if (rootItems.length === 0) { results.push({ unit, status: "success", data: { code: 0, data: { comments: {}, total_replies: 0, expanded_count: 0 } }, method: "signature", responseTime: 0 }); break; }
             }
+            const tr = await this.traverseSubReplies(rootItems, {
+              rootIdExtractor: (item: any) => String(item.id), maxPages: maxSub, staggerMs: 500,
+              fetchPage: async (rootId, cursor) => {
+                const r = await this.fetchApi("笔记子回复", { note_id: nid, rpid: String(rootId), cursor: String(cursor) }, session);
+                const d = JSON.parse(r.body);
+                if (d.code === 0 && d.data?.comments) return { replies: d.data.comments, hasMore: !(d.data.cursor?.is_end ?? true), nextCursor: d.data.cursor?.next || "0", responseTime: r.responseTime };
+                return { replies: [], hasMore: false, nextCursor: "0", responseTime: 0 };
+              },
+            });
+            results.push({ unit, status: "success", data: { code: 0, data: { comments: tr.byRpid, total_replies: tr.totalReplies, expanded_count: tr.expandedCount } }, method: "signature", responseTime: tr.totalTime });
             break;
           }
           default:

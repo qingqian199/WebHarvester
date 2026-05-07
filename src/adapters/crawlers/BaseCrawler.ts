@@ -15,7 +15,32 @@ import { getSharedHttpAgentForUrl, getProxiedAgent } from "../../utils/shared-ht
 import { UnitResult } from "../../core/models/ContentUnit";
 import { MiddlewarePipeline } from "./MiddlewarePipeline";
 import { FingerprintMiddleware, RateLimitMiddleware, BodyTruncationMiddleware, RetryMiddleware, BrowserSignatureMiddleware } from "./middleware";
-import { getBrowser } from "../../utils/BrowserPool";
+import { getBrowser as getProviderBrowser } from "../../services/BrowserProvider";
+import { FeatureFlags } from "../../core/features";
+
+export interface SubReplyFetchResult {
+  replies: unknown[];
+  hasMore: boolean;
+  nextCursor: string | number;
+  responseTime: number;
+}
+
+export interface SubReplyTraverseOptions {
+  rootIdExtractor: (item: unknown) => string | number;
+  fetchPage: (rootId: string | number, cursor: string | number) => Promise<SubReplyFetchResult>;
+  maxPages?: number;
+  concurrency?: number;
+  staggerMs?: number;
+  postProcess?: (replies: unknown[], rootId: string | number) => { replies: unknown[]; additional?: Record<string, unknown> };
+}
+
+export interface SubReplyResult {
+  byRpid: Record<string, { replies: unknown[]; all_count: number }>;
+  totalReplies: number;
+  expandedCount: number;
+  totalTime: number;
+  failedCount: number;
+}
 
 export abstract class BaseCrawler implements ISiteCrawler {
   abstract readonly name: string;
@@ -155,6 +180,88 @@ export abstract class BaseCrawler implements ISiteCrawler {
   }
 
   /** Playwright 页面数据提取的公共流程。使用了 BrowserPool 复用浏览器实例。 */
+  /** 子类可重写以将 API 请求 URL 映射为页面 URL（用于风控降级时打开用户页面提取 SSR 数据）。 */
+  protected getPageUrlForApi(apiUrl: string): string {
+    return apiUrl;
+  }
+
+  /** 从 JSON 响应体中提取已知风控码。返回第一个匹配的 code，无匹配返回 null。 */
+  protected extractErrorCodeFromBody(body: string, knownCodes: number[]): number | null {
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed != null && typeof parsed === "object") {
+        const code = parsed.code ?? parsed.status_code ?? parsed.errcode;
+        if (typeof code === "number" && code !== 0 && (knownCodes.includes(code) || RISK_LEVELS[String(code)])) return code;
+      }
+    } catch {}
+    return null;
+  }
+
+  /** 浏览器降级：打开页面，提取 SSR 数据，包装为 API 兼容格式。 */
+  private async tryBrowserFallback(url: string, session?: CrawlerSession, errorCode?: number): Promise<PageData | null> {
+    const start = Date.now();
+    try {
+      const cdpReady = await this.quickCdpCheck();
+      if (!cdpReady) { this.logger.warn("ChromeService CDP 不可用，跳过浏览器降级"); return null; }
+      const pageUrl = this.getPageUrlForApi(url);
+      const { browser } = await this.fetchPageContent(pageUrl, session, this.domain);
+      try {
+        const { body } = await this.extractSSRData(browser, "Signature", errorCode);
+        const elapsed = Date.now() - start;
+        this.logger.info(`✅ 浏览器降级请求成功 (耗时: ${elapsed}ms)`);
+        return { url, statusCode: 200, body, headers: { "content-type": "application/json;charset=utf-8" }, responseTime: elapsed, capturedAt: new Date().toISOString() };
+      } finally { await browser.close(); }
+    } catch (browserErr) {
+      this.logger.error(`❌ 浏览器降级请求也失败: ${(browserErr as Error).message}，放弃降级`);
+      return null;
+    }
+  }
+
+  /** 提取 SSR 数据：依次尝试 __INITIAL_STATE__ / __NEXT_DATA__ / __NUXT_DATA__。 */
+  protected async extractSSRData(browser: PlaywrightAdapter, degradedFrom = "Signature", errorCode?: number): Promise<{ body: string }> {
+    const b = browser as any;
+    const ssrData: string = await b.executeScript(`(() => {
+      const r = {}; const is = window.__INITIAL_STATE__;
+      if (is) { r._hasInitState = true; r.data = JSON.parse(JSON.stringify(is)); }
+      const nd = document.getElementById("__NEXT_DATA__");
+      if (nd) { r._hasNextData = true; try { r.nextData = JSON.parse(nd.textContent || "{}"); } catch {} }
+      const nu = document.getElementById("__NUXT_DATA__");
+      if (nu) { r._hasNuxtData = true; try { r.nuxtData = JSON.parse(nu.textContent || "{}"); } catch {} }
+      r.title = document.title; return JSON.stringify(r);
+    })()`).catch(() => "{}");
+    const parsed = JSON.parse(ssrData);
+    if (parsed._hasInitState || parsed._hasNextData || parsed._hasNuxtData) {
+      const apiCompat: Record<string, unknown> = { code: 0, _degraded: true, _degradedFrom: degradedFrom };
+      if (errorCode != null) apiCompat._degradedCode = errorCode;
+      if (parsed.data) apiCompat.data = parsed.data;
+      else if (parsed.nextData) apiCompat.data = parsed.nextData.props?.pageProps || parsed.nextData;
+      else if (parsed.nuxtData) apiCompat.data = parsed.nuxtData;
+      return { body: JSON.stringify(apiCompat) };
+    }
+    const title = parsed.title || "";
+    const bodyText: string = await b.executeScript("document.body.innerText.slice(0, 10000)").catch(() => "");
+    return { body: JSON.stringify({ code: 0, _degraded: true, _degradedFrom: degradedFrom, title, content: bodyText, _degradedCode: errorCode }) };
+  }
+
+  /** ChromeService CDP 连接端口，由 index.ts 启动时设置。 */
+  static chromeServicePort = 9222;
+
+  /** 快速检查 ChromeService CDP 是否可用。 */
+  private async quickCdpCheck(): Promise<boolean> {
+    if (!FeatureFlags.enableChromeService) return false;
+    const { get } = await import("http");
+    return new Promise((resolve) => {
+      const req = get(`http://127.0.0.1:${BaseCrawler.chromeServicePort}/json/version`, (res) => {
+        resolve(res.statusCode === 200);
+      });
+      req.on("error", () => {
+        this.logger.warn("ChromeService CDP 不可用 (端口 9222 无响应)，跳过浏览器降级。");
+        resolve(false);
+      });
+      req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+    });
+  }
+
   protected async fetchPageContent(
     url: string,
     session?: CrawlerSession,
@@ -168,7 +275,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
     const siteKey = domain || this.domain;
 
     try {
-      const { context } = await getBrowser(siteKey);
+      const { context } = await getProviderBrowser(siteKey);
       const sessionState = session ? {
         cookies: session.cookies.map((c) => ({
           name: c.name, value: c.value, domain: c.domain ?? `.${siteKey}`,
@@ -280,5 +387,62 @@ export abstract class BaseCrawler implements ISiteCrawler {
       responseTime: Date.now() - startTime,
       capturedAt: new Date().toISOString(),
     });
+  }
+
+  /** 策略映射表，子类在构造器中注册处理函数。 */
+  protected unitHandlers: Map<string, (unit: string, params: Record<string, string>, session?: CrawlerSession, authMode?: string, results?: UnitResult[]) => Promise<UnitResult>> = new Map();
+
+  /** 从策略映射中查找并执行处理函数，未找到返回 failed。 */
+  protected async dispatchUnit(unit: string, params: Record<string, string>, session?: CrawlerSession, authMode?: string, results?: UnitResult[]): Promise<UnitResult> {
+    const handler = this.unitHandlers.get(unit);
+    if (!handler) return { unit, status: "failed" as const, data: null, method: "none" as const, error: `未知内容单元: ${unit}`, responseTime: 0 };
+    return handler(unit, params, session, authMode, results);
+  }
+
+  protected shuffleArray<T>(arr: T[]): T[] {
+    const shuffled = [...arr];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+
+  /**
+   * 通用子回复遍历。
+   * 收集 rootItems 中所有 rootId → 并发请求子回复 API → 翻页 → 按 rootId 分组。
+   */
+  protected async traverseSubReplies<T>(rootItems: T[], options: SubReplyTraverseOptions): Promise<SubReplyResult> {
+    const maxPages = options.maxPages ?? 5;
+    const concurrency = options.concurrency ?? 3;
+    const staggerMs = options.staggerMs ?? 500;
+    const rpids = rootItems.map((r) => String(options.rootIdExtractor(r))).filter(Boolean);
+    if (rpids.length === 0) return { byRpid: {}, totalReplies: 0, expandedCount: 0, totalTime: 0, failedCount: 0 };
+    const target = rpids.slice(0, 100);
+    type RpidResult = { rootId: string; replies: unknown[]; all_count: number; subReplyTime: number };
+    const rpidResults: (RpidResult | null)[] = await this.runWithConcurrency(target, concurrency, async (rootId: string): Promise<RpidResult | null> => {
+      try {
+        await new Promise((r) => setTimeout(r, staggerMs));
+        let allReplies: unknown[] = [];
+        let totalTime = 0;
+        let cursor: string | number = 0;
+        for (let p = 0; p < maxPages; p++) {
+          const result = await options.fetchPage(rootId, cursor);
+          totalTime += result.responseTime;
+          if (result.replies.length > 0) { allReplies = allReplies.concat(result.replies); if (!result.hasMore) break; cursor = result.nextCursor; } else break;
+        }
+        let processedReplies = allReplies;
+        if (options.postProcess) { const pp = options.postProcess(processedReplies, rootId); processedReplies = pp.replies; }
+        return { rootId, replies: processedReplies, all_count: processedReplies.length, subReplyTime: totalTime };
+      } catch (e: unknown) { this.logger.warn(`子回复遍历失败 (rootId=${rootId}): ${e instanceof Error ? e.message : String(e)}`); return null; }
+    });
+    const byRpid: Record<string, { replies: unknown[]; all_count: number }> = {};
+    let totalReplies = 0, expandedCount = 0, totalTime = 0, failedCount = 0;
+    for (const rr of rpidResults) {
+      if (!rr) { failedCount++; continue; }
+      if (rr.all_count > 0) { byRpid[rr.rootId] = { replies: rr.replies, all_count: rr.all_count }; totalReplies += rr.all_count; expandedCount++; }
+      totalTime += rr.subReplyTime;
+    }
+    return { byRpid, totalReplies, expandedCount, totalTime, failedCount };
   }
 }

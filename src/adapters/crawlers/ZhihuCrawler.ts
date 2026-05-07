@@ -222,48 +222,42 @@ export class ZhihuCrawler extends BaseCrawler {
             if (!aid2) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 answer_id", responseTime: 0 }); break; }
             const root = params.root || "";
             const maxSub = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
+
+            let rootItems: any[];
             if (root) {
-              let allReplies: any[] = [];
-              let totalTime = 0;
-              let cursor = "";
-              for (let page = 0; page < maxSub; page++) {
-                try {
-                  const r = await this.fetchApi("回答子回复", { comment_id: root, cursor }, session);
-                  const d = JSON.parse(r.body);
-                  totalTime += r.responseTime;
-                  if (Array.isArray(d.data)) { allReplies = allReplies.concat(d.data); if (d.paging?.is_end) break; cursor = d.paging?.next || ""; } else break;
-                } catch { break; }
-              }
-              results.push({ unit, status: "success", data: { data: allReplies, paging: { totals: allReplies.length } }, method: "signature", responseTime: totalTime });
+              rootItems = [{ id: root }];
             } else {
               const commentsResult: any = results.find((r) => r.unit === "zhihu_comments" && r.status === "success");
               if (!commentsResult) { results.push({ unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「回答评论」", responseTime: 0 }); break; }
-              const topComments: any[] = commentsResult.data?.data || [];
-              const rpids = topComments.map((r: any) => String(r.id)).filter(Boolean);
-              if (rpids.length === 0) { results.push({ unit, status: "success", data: { data: [], paging: { totals: 0 } }, method: "signature", responseTime: 0 }); break; }
-              const target = rpids.slice(0, 100);
-              const rpidResults = await this.runWithConcurrency(target, 3, async (rpid: string) => {
-                await new Promise((r2) => setTimeout(r2, 500));
-                let replies: any[] = [];
-                let t = 0;
-                let c = "";
-                for (let p = 0; p < maxSub; p++) {
-                  try {
-                    const r = await this.fetchApi("回答子回复", { comment_id: rpid, cursor: c }, session);
-                    const d = JSON.parse(r.body);
-                    t += r.responseTime;
-                    if (Array.isArray(d.data)) { replies = replies.concat(d.data); if (d.paging?.is_end) break; c = d.paging?.next || ""; } else break;
-                  } catch { break; }
-                }
-                return { rpid, replies, all_count: replies.length, subReplyTime: t };
-              });
-              const byRpid: Record<string, any> = {};
-              let totalReplies = 0;
-              for (const rr of rpidResults) {
-                if (rr.all_count > 0) { byRpid[rr.rpid] = { replies: rr.replies, all_count: rr.all_count }; totalReplies += rr.all_count; }
-              }
-              results.push({ unit, status: "success", data: { data: byRpid, paging: { totals: totalReplies } }, method: "signature", responseTime: rpidResults.reduce((s: number, r: any) => s + r.subReplyTime, 0) });
+              rootItems = commentsResult.data?.data || [];
+              if (rootItems.length === 0) { results.push({ unit, status: "success", data: { data: [], paging: { totals: 0 } }, method: "signature", responseTime: 0 }); break; }
             }
+
+            const traverseResult = await this.traverseSubReplies(rootItems, {
+              rootIdExtractor: (item: any) => String(item.id),
+              maxPages: maxSub,
+              staggerMs: 500,
+              fetchPage: async (rootId, cursor) => {
+                const r = await this.fetchApi("回答子回复", { comment_id: String(rootId), cursor: String(cursor) }, session);
+                const d = JSON.parse(r.body);
+                if (Array.isArray(d.data)) {
+                  return {
+                    replies: d.data,
+                    hasMore: !(d.paging?.is_end ?? true),
+                    nextCursor: d.paging?.next || "",
+                    responseTime: r.responseTime,
+                  };
+                }
+                return { replies: [], hasMore: false, nextCursor: "", responseTime: 0 };
+              },
+            });
+
+            results.push({
+              unit, status: "success",
+              data: { data: traverseResult.byRpid, paging: { totals: traverseResult.totalReplies } },
+              method: "signature",
+              responseTime: traverseResult.totalTime,
+            });
             break;
           }
           default:

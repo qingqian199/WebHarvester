@@ -203,8 +203,9 @@ export class BrowserLifecycleManager {
       });
 
       // 覆盖 permissions.query 不暴露自动化。
-      // navigator.permissions 类型在 Playwright 上下文中不完整，需 as any 才能修改。
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Playwright sandboxes navigator.permissions
       const originalQuery = (navigator as any).permissions.query.bind((navigator as any).permissions);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Playwright's navigator.permissions.query API
       (navigator as any).permissions.query = (p: any) =>
         p.name === "notifications"
           ? Promise.resolve({ state: "denied" })
@@ -248,14 +249,17 @@ export class BrowserLifecycleManager {
   }
 
   /** 从已存在的 BrowserContext 创建页面（复用池化浏览器，反检测脚本通过 addInitScript 注入）。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
   async attachToContext(context: any, url: string, sessionState?: SessionState, pageSetup?: (page: any) => Promise<void>): Promise<void> {
     this.capturedRequests.clear();
     this.isNetworkCaptureEnabled = false;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.context = context as any;
     this.pooled = true;
     this.page = await context.newPage();
 
     if (sessionState) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cookies = sessionState.cookies.map((c: any) => ({
         name: c.name, value: c.value,
         domain: c.domain.startsWith(".") ? c.domain : `.${c.domain}`,

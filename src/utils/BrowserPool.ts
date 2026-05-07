@@ -90,3 +90,18 @@ export function poolSize(): number { return pool.size; }
 
 /** 获取所有站点名。 */
 export function poolSites(): string[] { return [...pool.keys()]; }
+
+/** 直接设置池条目（供 ChromeService CDP 注册使用）。 */
+export function setPoolEntry(site: string, browser: Browser, context: BrowserContext, lastUsedAt?: number): void {
+  pool.set(site, { browser, context, createdAt: Date.now(), lastUsedAt: lastUsedAt ?? Date.now() });
+}
+
+/** 删除指定站点的池条目。 */
+export function deletePoolEntry(site: string): void {
+  pool.delete(site);
+}
+
+/** 获取指定站点池条目的 lastUsedAt 时间戳。 */
+export function getPoolEntryLastUsed(site: string): number | undefined {
+  return pool.get(site)?.lastUsedAt;
+}
