@@ -28,6 +28,8 @@ import { handleViewSessions } from "./cli/handlers/view-sessions";
 import { handleStartWeb, stopActiveWebServer } from "./cli/handlers/start-web";
 import { handleViewConfig } from "./cli/handlers/view-config";
 import { handleToggleFeatures } from "./cli/handlers/toggle-features";
+import { handleExportComments } from "./cli/handlers/export-comments";
+import { handleExportXhsComments } from "./cli/handlers/export-xhs-comments";
 import { CliAction } from "./cli/types";
 
 let globalProxyProvider: IProxyProvider | undefined;
@@ -189,8 +191,32 @@ async function bootstrap() {
       case "toggle-features":
         await handleToggleFeatures(deps);
         break;
+      case "export-comments":
+        await handleExportComments();
+        break;
+      case "export-xhs-comments":
+        await handleExportXhsComments();
+        break;
+      case "backend-status":
+        await handleBackendStatus();
+        break;
     }
     console.log("");
+  }
+}
+
+async function handleBackendStatus(): Promise<void> {
+  try {
+    const { getBackendHealth } = await import("./utils/backend-client");
+    const health = await getBackendHealth();
+    console.log("\n🔌 后端服务状态:\n");
+    for (const [svc, status] of Object.entries(health.services)) {
+      const icon = status === "ready" ? "✅" : status === "standalone" ? "🟢" : status === "starting" ? "⏳" : status === "disabled" ? "⬜" : "❌";
+      console.log(`  ${icon} ${svc}: ${status}`);
+    }
+    console.log("");
+  } catch {
+    console.log("\n❌ 后端服务不可用 (请启动 backend/)\n");
   }
 }
 

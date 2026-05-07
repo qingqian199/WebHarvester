@@ -12,8 +12,11 @@ export type MenuAction =
     | { type: "quick-article"; url: string; profile?: string }
     | { type: "analyze" }
     | { type: "gen-stub" }
+    | { type: "export-comments" }
+    | { type: "export-xhs-comments" }
     | { type: "view-sessions" }
     | { type: "web" }
+    | { type: "backend-status" }
     | { type: "view-config" }
     | { type: "toggle-features" }
     | { type: "exit" };
@@ -41,12 +44,15 @@ export async function startMainMenu(statusLine?: string): Promise<MenuAction> {
                 new inquirer.Separator(" 📊 离线分析"),
                 { name: "  6. 分析已有采集结果", value: "analyze" },
                 { name: "  7. 生成签名桩代码", value: "gen-stub" },
-                { name: "  8. 查看已存会话", value: "view-sessions" },
+                { name: "  8. 导出抖音评论 (浏览器内直连翻页→Excel)", value: "export-comments" },
+                { name: "  9. 导出小红书评论 (浏览器内直连翻页→Excel)", value: "export-xhs-comments" },
+                { name: " 10. 查看已存会话", value: "view-sessions" },
                 new inquirer.Separator(" 🌍 服务"),
-                { name: "  9. 启动 Web 可视化面板", value: "web" },
+                { name: " 11. 启动 Web 可视化面板", value: "web" },
+                { name: " 12. 🔌 后端服务状态", value: "backend-status" },
                 new inquirer.Separator(" ⚙️ 配置"),
-                { name: " 10. 查看当前配置", value: "view-config" },
-                { name: " 11. 切换功能开关", value: "toggle-features" },
+                { name: " 13. 查看当前配置", value: "view-config" },
+                { name: " 14. 切换功能开关", value: "toggle-features" },
                 { name: "  0. 退出", value: "exit" },
             ]
         }
@@ -146,9 +152,12 @@ export async function startMainMenu(statusLine?: string): Promise<MenuAction> {
     }
 
     if (action === "gen-stub") return { type: "gen-stub" };
+    if (action === "export-comments") return { type: "export-comments" };
+    if (action === "export-xhs-comments") return { type: "export-xhs-comments" };
     if (action === "view-sessions") return { type: "view-sessions" };
     if (action === "analyze") return { type: "analyze" };
     if (action === "web") return { type: "web" };
+    if (action === "backend-status") return { type: "backend-status" };
     if (action === "view-config") return { type: "view-config" };
     if (action === "toggle-features") return { type: "toggle-features" };
     return { type: "exit" };
