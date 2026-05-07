@@ -4,9 +4,6 @@
  *
  * 用法: npx ts-node scripts/e2e-verify-all.ts
  */
-import fs from "fs/promises";
-import path from "path";
-import { CrawlerDispatcher } from "../src/core/services/CrawlerDispatcher";
 import { XhsCrawler } from "../src/adapters/crawlers/XhsCrawler";
 import { ZhihuCrawler } from "../src/adapters/crawlers/ZhihuCrawler";
 import { BilibiliCrawler } from "../src/adapters/crawlers/BilibiliCrawler";
@@ -190,7 +187,7 @@ interface ReportEntry {
   };
 
   await fs.writeFile("output/e2e-report.json", JSON.stringify(summary, null, 2), "utf-8");
-  console.log(`\n📁 报告已保存: output/e2e-report.json\n`);
+  console.log("\n📁 报告已保存: output/e2e-report.json\n");
 })().catch((e) => {
   console.error("❌ 失败:", e.message);
 });

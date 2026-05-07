@@ -4,8 +4,6 @@
  *
  * 用法: npx ts-node scripts/verify-xhs-sign-injection.ts
  */
-import fs from "fs/promises";
-import path from "path";
 import { chromium } from "playwright";
 import { RealisticFingerprintProvider } from "../src/adapters/RealisticFingerprintProvider";
 import { FileSessionManager } from "../src/adapters/FileSessionManager";
@@ -137,7 +135,7 @@ const XHS_API_HOST = "edith.xiaohongshu.com";
         console.log(`     ${icon} ${r.method} code=${r.code} "${r.msg}"`);
       }
     } else {
-      console.log(`     ⚠️ 未捕获到该 API 请求`);
+      console.log("     ⚠️ 未捕获到该 API 请求");
     }
   }
 

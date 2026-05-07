@@ -5,12 +5,9 @@
  *
  * 用法: npx ts-node scripts/compare-xhs-signatures.ts
  */
-import fs from "fs/promises";
-import path from "path";
 import { PlaywrightAdapter } from "../src/adapters/PlaywrightAdapter";
 import { ConsoleLogger } from "../src/adapters/ConsoleLogger";
 import { FileSessionManager } from "../src/adapters/FileSessionManager";
-import { AuthGuard } from "../src/utils/auth-guard";
 import { generateXsHeader } from "../src/utils/crypto/xhs-signer";
 
 function byteDiff(expected: string, actual: string): string[] {
@@ -75,7 +72,7 @@ function byteDiff(expected: string, actual: string): string[] {
     const realXs = headers["x-s"] || headers["X-s"] || "";
     const realXt = headers["x-t"] || headers["X-t"] || "";
     const realCommon = headers["x-s-common"] || headers["X-s-common"] || "";
-    const hasCookie = Object.keys(headers).some((k) => k.toLowerCase() === "cookie");
+    const _hasCookie = Object.keys(headers).some((k) => k.toLowerCase() === "cookie");
 
     if (!isReal || !realXs) continue;
     foundReal = true;
@@ -113,7 +110,7 @@ function byteDiff(expected: string, actual: string): string[] {
 
     if (ourHeaders["X-t"] !== realXt) {
       console.log(`  ❌ X-t 不一致: 生成=${ourHeaders["X-t"]}, 真实=${realXt}`);
-      console.log(`     (可能原因: 时间戳差异)`);
+      console.log("     (可能原因: 时间戳差异)");
     } else {
       console.log("  ✅ X-t 一致");
     }

@@ -13,7 +13,7 @@ interface CachedSession {
   localStorage?: Record<string, string>;
 }
 
-function fmt(label: string, val: string): string {
+function _fmt(label: string, val: string): string {
   return `${label.padEnd(18)} ${val}`;
 }
 

@@ -9,8 +9,6 @@
 
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
-import fs from "fs/promises";
-
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const CLI_ENTRY = path.resolve(PROJECT_ROOT, "src/index.ts");
 
@@ -53,7 +51,7 @@ describe("CLI E2E: collect flow", () => {
     throw new Error(`Timed out waiting for pattern: ${pattern}. Output so far:\n${output.slice(-2000)}`);
   }
 
-  async function writeStdin(text: string): Promise<void> {
+  async function _writeStdin(text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!proc.stdin) { reject(new Error("stdin not available")); return; }
       proc.stdin.write(text, (err) => {

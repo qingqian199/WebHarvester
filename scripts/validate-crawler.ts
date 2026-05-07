@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   // 特化爬虫: crawlerData 是 UnitResult[] 数组
   const crawlerResults = Array.isArray(crawlerData) ? crawlerData : [crawlerData];
 
-  console.log(`\n📊 数据校验报告`);
+  console.log("\n📊 数据校验报告");
   console.log(`   ${"=".repeat(60)}`);
   console.log(`   全量采集: ${path.basename(fullPath)} (${fullData.networkRequests?.length || 0} 个请求)`);
   console.log(`   特化爬虫: ${path.basename(crawlerPath)} (${crawlerResults.length} 个单元)`);

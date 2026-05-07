@@ -1,5 +1,10 @@
 # WebHarvester Project Learnings
 
+## Git 纪律（强制）
+- **严禁执行版本回退命令**：`git checkout -- .`、`git reset --hard`、`git restore .` 等会丢弃未提交的工作区修改。如有需要清理临时文件，用 `git clean -fd` 而非 `git checkout -- .`。
+- 新的未跟踪文件（如 `src/services/ChromeService.ts`、测试文件等）必须及时 `git add` 并 `git commit`，防止因工作区清理而永久丢失。
+- 所有修改应该通过小步提交（每完成一个独立功能即提交），而非累积大量未提交修改。
+
 ## ESLint
 - ESLint 9 requires `eslint.config.js` (flat config), not `.eslintrc.json`. The `typescript-eslint` v8 meta-package (`npm install typescript-eslint`) is needed for flat config.
 - `no-magic-numbers` must ignore HTTP status codes: `ignore: [0, 1, -1, 200, 204, 400, 404, 500, 1000, 3000]`
