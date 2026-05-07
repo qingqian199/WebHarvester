@@ -284,6 +284,17 @@ export class BrowserLifecycleManager {
   /** 标记为池化模式：close() 只关闭 page，不关闭 context/browser。 */
   markPooled(): void { this.pooled = true; }
 
+  /** 设置 Browser 实例（用于 CDP 连接模式下注入外部 browser 引用）。 */
+  setBrowser(b: any): void {
+    this.browser = b;
+  }
+
+  /** 关闭并清空网络捕获路由。 */
+  disableNetworkCapture(): void {
+    this.isNetworkCaptureEnabled = false;
+    this.page?.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
+  }
+
   async close(): Promise<void> {
     await this.page?.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
     await this.page?.close().catch(() => {});

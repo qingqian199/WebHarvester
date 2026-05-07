@@ -2,9 +2,10 @@ import inquirer from "inquirer";
 import { HarvestConfig } from "../core/models";
 import { FileSessionManager } from "../adapters/FileSessionManager";
 import { loadAppConfig } from "../utils/config-loader";
+import { FeatureFlags } from "../core/features";
 
 export type MenuAction =
-    | { type: "single"; config: HarvestConfig; profile?: string; saveSession: boolean }
+    | { type: "single"; config: HarvestConfig; profile?: string; saveSession: boolean; useChromeService?: boolean }
     | { type: "crawler-site"; site: string; url: string; profile?: string }
     | { type: "batch" }
     | { type: "login"; profile: string; loginUrl: string; verifyUrl: string }
@@ -38,6 +39,9 @@ export async function startMainMenu(statusLine?: string): Promise<MenuAction> {
                     ? [{ name: `  2. 特化站点采集（${enabledCrawlers.join("/")}）`, value: "crawler" }]
                     : []),
                 { name: "  3. 批量任务", value: "batch" },
+                ...(FeatureFlags.enableChromeService
+                    ? [{ name: " 🔗 连接已有Chrome采集", value: "chrome_capture" }]
+                    : []),
                 new inquirer.Separator(" 🔐 登录与会话"),
                 { name: "  4. 账号密码登录", value: "login" },
                 { name: "  5. 扫码登录", value: "qrcode" },
@@ -133,6 +137,28 @@ export async function startMainMenu(statusLine?: string): Promise<MenuAction> {
             { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" }
         ]);
         return { type: "qrcode", ...ans };
+    }
+
+    if (action === "chrome_capture") {
+        const { mode, targetUrl } = await inquirer.prompt([
+            { type: "list", name: "mode", message: "选择采集模式：", choices: [
+                { name: "🔍 快速探测", value: "quick" },
+                { name: "📦 全量采集", value: "full" },
+                { name: "🔬 增强全量", value: "enhanced" },
+            ]},
+            { type: "input", name: "targetUrl", message: "目标网址：", validate: (v: string) => !!v.trim() },
+        ]);
+        const isEnhanced = mode === "enhanced";
+        const config: import("../core/models").HarvestConfig = {
+            targetUrl,
+            networkCapture: { captureAll: mode === "full" || mode === "enhanced", enhancedFullCapture: isEnhanced },
+        };
+        if (mode === "quick") {
+            config.elementSelectors = ["input", "input[type=\"hidden\"]", "form", "button", "textarea", "select"];
+            config.storageTypes = ["localStorage", "sessionStorage", "cookies"] as const;
+        }
+        if (isEnhanced) console.log("\n⚠️ 增强全量模式将捕获所有网络请求，结果文件可能较大。\n");
+        return { type: "single", config, useChromeService: true, saveSession: false };
     }
 
     if (action === "quick-article") {

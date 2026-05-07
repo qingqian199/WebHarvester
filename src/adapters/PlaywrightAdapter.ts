@@ -1,3 +1,4 @@
+import { chromium } from "playwright";
 import { IBrowserAdapter } from "../core/ports/IBrowserAdapter";
 import { ILogger } from "../core/ports/ILogger";
 import { SessionState } from "../core/ports/ISessionManager";
@@ -11,6 +12,8 @@ import { releaseBrowser } from "../utils/BrowserPool";
 export class PlaywrightAdapter implements IBrowserAdapter {
   private readonly lcm: BrowserLifecycleManager;
   private poolSite = "";
+  /** 是否通过 CDP 连接到已有 Chrome 实例（跳过 launch）。 */
+  private _cdpAttached = false;
 
   constructor(private readonly logger: ILogger) {
     this.lcm = new BrowserLifecycleManager(logger);
@@ -18,7 +21,35 @@ export class PlaywrightAdapter implements IBrowserAdapter {
 
   /** 启动浏览器并导航到 URL。可选的 pageSetup 回调在页面创建后、导航前调用。 */
   async launch(url: string, sessionState?: SessionState, proxyUrl?: string, pageSetup?: (page: any) => Promise<void>, enableFullCapture?: boolean, captureAllTypes?: boolean): Promise<void> {
+    // CDP 连接模式：浏览器已就绪
+    if (this._cdpAttached) {
+      if (enableFullCapture || captureAllTypes) {
+        this.lcm.disableNetworkCapture();
+        this.lcm.startNetworkCapture(enableFullCapture, captureAllTypes);
+      }
+      const extraWait = enableFullCapture || captureAllTypes
+        ? REQUEST_CAPTURE_EXTRA_WAIT_MS
+        : 1000;
+      await new Promise((r) => setTimeout(r, extraWait));
+      return;
+    }
     await this.lcm.launch(url, true, sessionState, "domcontentloaded", undefined, proxyUrl, pageSetup, enableFullCapture, captureAllTypes);
+  }
+
+  /** 连接到 ChromeService 管理的已有 Chrome 实例 (CDP)。返回新的 PlaywrightAdapter。 */
+  static async connectToChromeService(port: number, url: string, logger: ILogger, sessionState?: SessionState, pageSetup?: (page: any) => Promise<void>): Promise<PlaywrightAdapter> {
+    const adapter = new PlaywrightAdapter(logger);
+    adapter._cdpAttached = true;
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 15000 });
+    const context = browser.contexts()[0] || await browser.newContext();
+    await adapter.lcm.attachToContext(context, url, sessionState, pageSetup);
+    adapter._injectCdpBrowser(browser);
+    return adapter;
+  }
+
+  /** 注入 CDP 浏览器实例引用（供关闭时使用）。 */
+  private _injectCdpBrowser(browser: any): void {
+    this.lcm.setBrowser(browser);
   }
 
   /** 从已存在的 Browser Context 创建页面（浏览器池复用）。 */
