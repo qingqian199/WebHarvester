@@ -17,6 +17,8 @@ export interface IBrowserAdapter {
   executeScript<T>(script: string): Promise<T>;
   /** 获取页面加载性能指标（如 FCP、DOM 解析时间）。 */
   getPageMetrics(): PageLoadMetrics | null;
+  /** 获取页面诊断数据（console 消息和 JS 错误），用于增强捕获的调试分析。 */
+  getPageDiagnostics(): { consoleMessages: Array<{ type: string; text: string }>; pageErrors: Array<{ message: string; stack?: string }> };
   /** 关闭浏览器并释放资源。 */
   close(): Promise<void>;
 }

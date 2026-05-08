@@ -107,10 +107,8 @@ describe("CrawlerIntegration: fetchWithRetry → risk codes → circuit breaker"
 
   it("-352 retry exhausts → falls back to page extraction", async () => {
     const fetchSpy = jest.spyOn(crawler as any, "fetchApi");
-    let callCount = 0;
     fetchSpy.mockImplementation((async (_name: string) => {
-      callCount++;
-      return mockPage({ code: callCount <= 2 ? -352 : 0 });
+      return mockPage({ code: -352 });
     }) as any);
 
     // Mock fetchPageContent (called by fetchPageData internally) to return a valid result

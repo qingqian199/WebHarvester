@@ -21,6 +21,7 @@ function stubBrowser(): IBrowserAdapter {
     getStorage: jest.fn().mockResolvedValue({ localStorage: {}, sessionStorage: {}, cookies: [] }),
     executeScript: jest.fn().mockResolvedValue(""),
     getPageMetrics: jest.fn().mockReturnValue(null),
+    getPageDiagnostics: jest.fn().mockReturnValue({ consoleMessages: [], pageErrors: [] }),
   };
 }
 

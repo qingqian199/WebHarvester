@@ -30,6 +30,7 @@ function stubBrowser(): IBrowserAdapter {
     } as StorageSnapshot),
     executeScript: jest.fn() as any,
     getPageMetrics: jest.fn().mockReturnValue(null),
+    getPageDiagnostics: jest.fn().mockReturnValue({ consoleMessages: [], pageErrors: [] }),
     close: jest.fn() as any,
   };
 }

@@ -2,7 +2,9 @@ import { NetworkRequest } from "../models";
 
 export const API_PATH_KEYWORDS = [
   "/api/", "/ajax/", "/v1/", "/v2/", "/v3/", "/rest/",
-  "/graphql", "/rpc/", "/biz/", "/user/", "/auth/"
+  "/graphql", "/rpc/", "/biz/", "/user/", "/auth/",
+  "/x/", "/search/", "/comment/", "/reply/", "/feed/",
+  "/recommend/", "/space/", "/detail/", "/list/",
 ];
 
 export const STATIC_ASSET_SUFFIX = [

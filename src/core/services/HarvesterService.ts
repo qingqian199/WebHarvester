@@ -190,6 +190,53 @@ export class HarvesterService {
     ]);
 
     const jsVariables: Record<string, unknown> = {};
+
+    // 增强全量模式：自动提取页面 SSR 数据（__INITIAL_STATE__ / __NEXT_DATA__ / __NUXT_DATA__）
+    if (enableFullCapture || captureAllTypes) {
+      try {
+        const ssrData = await this.browser.executeScript<string>(`(() => {
+          const r = {};
+          try {
+            var is = window.__INITIAL_STATE__;
+            if (is) { try { r.__INITIAL_STATE__ = JSON.parse(JSON.stringify(is)); } catch(e) { r.__INITIAL_STATE__ = String(is).slice(0, 1000); } }
+          } catch(e) {}
+          try {
+            var nd = document.getElementById('__NEXT_DATA__');
+            if (nd) { try { r.__NEXT_DATA__ = JSON.parse(nd.textContent || '{}'); } catch(e) { r.__NEXT_DATA__ = (nd.textContent || '').slice(0, 1000); } }
+          } catch(e) {}
+          try {
+            var nu = document.getElementById('__NUXT_DATA__');
+            if (nu) { try { r.__NUXT_DATA__ = JSON.parse(nu.textContent || '{}'); } catch(e) { r.__NUXT_DATA__ = (nu.textContent || '').slice(0, 1000); } }
+          } catch(e) {}
+          return JSON.stringify(r);
+        })()`).catch(() => "{}");
+        const parsed = JSON.parse(ssrData);
+        if (parsed.__INITIAL_STATE__ || parsed.__NEXT_DATA__ || parsed.__NUXT_DATA__) {
+          jsVariables.__SSR_DATA__ = parsed;
+          const hasTypes = [
+            parsed.__INITIAL_STATE__ ? "__INITIAL_STATE__" : null,
+            parsed.__NEXT_DATA__ ? "__NEXT_DATA__" : null,
+            parsed.__NUXT_DATA__ ? "__NUXT_DATA__" : null,
+          ].filter(Boolean).join(", ");
+          this.logger.info(`📄 页面 SSR 数据已提取：${hasTypes}`);
+        }
+      } catch {
+        this.logger.debug("页面未包含 SSR 数据或提取失败");
+      }
+
+      // 收集页面诊断数据（console 消息和 JS 错误）
+      try {
+        const diag = this.browser.getPageDiagnostics();
+        if (diag.consoleMessages.length > 0) jsVariables.__PAGE_CONSOLE__ = diag.consoleMessages;
+        if (diag.pageErrors.length > 0) {
+          jsVariables.__PAGE_ERRORS__ = diag.pageErrors;
+          this.logger.warn(`⚠️ 页面 ${diag.pageErrors.length} 个 JS 错误`, { firstError: diag.pageErrors[0].message });
+        }
+      } catch {
+        this.logger.debug("页面诊断数据获取失败");
+      }
+    }
+
     if (config.jsScripts?.length) {
       for (const s of config.jsScripts) {
         if (typeof s === "string") continue;

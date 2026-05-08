@@ -49,6 +49,7 @@ describe("BilibiliCrawler.collectUnits", () => {
   it("组合采集: 视频信息 + 视频评论 — 两个单元都被正确调用", async () => {
     const fetchApiSpy = jest.spyOn(crawler as any, "fetchApi");
     fetchApiSpy.mockImplementation(((name: string) => {
+      if (name === "视频详情(wbi)") return mockPage({ code: -1 }); // 降级到基础端点
       if (name === "视频信息") return videoInfoOk();
       if (name === "视频评论") return commentsOk();
       return mockPage({ code: 0 });
@@ -64,6 +65,7 @@ describe("BilibiliCrawler.collectUnits", () => {
     const comments = results.find((r) => r.unit === "bili_video_comments");
     expect(info?.status).toBe("success");
     expect(comments?.status).toBe("success");
+    expect(fetchApiSpy).toHaveBeenCalledWith("视频详情(wbi)", expect.any(Object), undefined);
     expect(fetchApiSpy).toHaveBeenCalledWith("视频信息", expect.any(Object), undefined);
     expect(fetchApiSpy).toHaveBeenCalledWith("视频评论", expect.any(Object), undefined);
   });
@@ -97,6 +99,10 @@ describe("BilibiliCrawler.collectUnits", () => {
     let callCount = 0;
     fetchApiSpy.mockImplementation(((name: string) => {
       callCount++;
+      if (name === "视频详情(wbi)") {
+        if (callCount <= 1) return videoInfo352();
+        return videoInfoOk();
+      }
       if (name === "视频信息") {
         if (callCount <= 1) return videoInfo352();
         return videoInfoOk();
@@ -111,12 +117,14 @@ describe("BilibiliCrawler.collectUnits", () => {
     expect(info).toBeDefined();
     expect(info!.status).toBe("success");
     expect(info!.method).toBe("signature");
-    expect(fetchApiSpy).toHaveBeenCalledTimes(2);
+    // 视频详情(wbi) 被调 2 次（失败+重试），视频信息未被调用
+    expect(fetchApiSpy).toHaveBeenCalledWith("视频详情(wbi)", expect.any(Object), undefined);
   });
 
   it("URL 含 aid 自动补全免追问", async () => {
     const fetchApiSpy = jest.spyOn(crawler as any, "fetchApi");
     fetchApiSpy.mockImplementation(((name: string) => {
+      if (name === "视频详情(wbi)") return mockPage({ code: 0, data: { title: "ok" } });
       if (name === "视频信息") return mockPage({ code: 0, data: { title: "ok" } });
       return mockPage({ code: 0 });
     }) as any);

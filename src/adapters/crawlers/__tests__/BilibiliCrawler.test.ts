@@ -20,6 +20,43 @@ describe("signWbi", () => {
     const b = signWbi({ aid: "1" }, "k3", "k4");
     expect(a.w_rid).not.toBe(b.w_rid);
   });
+
+  it("matches HAR capture: player/wbi/v2 endpoint", () => {
+    // 验证 WBI 签名算法与 B站前端一致。
+    // 注意：WBI 签名包含所有请求参数（含 dm_img_* 追踪参数），
+    // BilibiliCrawler 不生成 dm_img_* 参数，但核心算法一致。
+    const imgKey = "7cd084941338484aae1ad9425b84077c";
+    const subKey = "4932caff0ff746eab6f01bf08b70ac45";
+    const params = {
+      aid: "116535213427484",
+      cid: "38171643280",
+      dm_cover_img_str: "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgUlRYIDUwNjAgTGFwdG9wIEdQVSAoMHgwMDAwMkQ1OSkgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSlHb29nbGUgSW5jLiAoTlZJRElBKQ",
+      dm_img_inter: "{\"ds\":[],\"wh\":[3850,4515,44],\"of\":[362,724,362]}",
+      dm_img_list: "[]",
+      dm_img_str: "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
+      isGaiaAvoided: "false",
+      web_location: "1315873",
+    };
+    const result = signWbi(params, imgKey, subKey, "1778242694");
+    expect(result.w_rid).toBe("f0689d5972caaf62f0bb889596fb1323");
+  });
+
+  it("matches HAR capture: view/detail endpoint", () => {
+    const imgKey = "7cd084941338484aae1ad9425b84077c";
+    const subKey = "4932caff0ff746eab6f01bf08b70ac45";
+    const params = {
+      aid: "116535213427484",
+      dm_cover_img_str: "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgUlRYIDUwNjAgTGFwdG9wIEdQVSAoMHgwMDAwMkQ1OSkgRGlyZWN0M0QxMSB2c181XzAgcHNfNV8wLCBEM0QxMSlHb29nbGUgSW5jLiAoTlZJRElBKQ",
+      dm_img_inter: "{\"ds\":[{\"t\":2,\"c\":\"YnB4LXBsYXllci12aWRlby1pbnB1dGJhci13cm\",\"p\":[2090,68,1880],\"s\":[48,1021,1180]},{\"t\":2,\"c\":\"YnB4LXBsYXllci1kbS1idG4tc2VuZCBidWkgYnVpLWJ1dHRvbg\",\"p\":[2678,62,1571],\"s\":[153,403,426]}],\"wh\":[3982,4559,88],\"of\":[177,354,177]}",
+      dm_img_list: "[]",
+      dm_img_str: "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
+      isGaiaAvoided: "false",
+      need_view: "1",
+      web_location: "1315873",
+    };
+    const result = signWbi(params, imgKey, subKey, "1778242697");
+    expect(result.w_rid).toBe("7679cff7a3c24055fedc88236b9e82e4");
+  });
 });
 
 describe("buildSignedQuery", () => {

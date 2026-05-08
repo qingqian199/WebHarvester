@@ -3,10 +3,10 @@ import path from "path";
 import { CliDeps, CliAction } from "../types";
 import { FileSessionManager } from "../../adapters/FileSessionManager";
 import { XhsCrawler, XhsApiEndpoints, XhsFallbackEndpoints } from "../../adapters/crawlers/XhsCrawler";
-import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS, TT_CONTENT_UNITS, BOSS_CONTENT_UNITS, UnitResult } from "../../core/models/ContentUnit";
+import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS, TT_CONTENT_UNITS, BOSS_CONTENT_UNITS, DOUYIN_CONTENT_UNITS, SCHOLAR_CONTENT_UNITS, UnitResult } from "../../core/models/ContentUnit";
 import { formatUnitResults } from "../../utils/formatter";
 import { exportResultsToXlsx } from "../../utils/exporter/xlsx-exporter";
-import { resolveBilibiliUrl, resolveZhihuUrl, resolveXiaohongshuUrl, resolveTikTokUrl } from "../../utils/url-resolver";
+import { resolveBilibiliUrl, resolveZhihuUrl, resolveXiaohongshuUrl, resolveTikTokUrl, resolveDouyinUrl } from "../../utils/url-resolver";
 import { extractWbiKey } from "../../utils/crypto/bilibili-signer";
 import biliFetch from "node-fetch";
 import { BilibiliCrawler } from "../../adapters/crawlers/BilibiliCrawler";
@@ -45,7 +45,9 @@ export async function handleCrawlerCollect(deps: CliDeps, action: CliAction): Pr
       : (crawler.name === "zhihu") ? ZHIHU_CONTENT_UNITS
       : (crawler.name === "bilibili") ? BILI_CONTENT_UNITS
       : (crawler.name === "tiktok") ? TT_CONTENT_UNITS
-      : (crawler.name === "boss_zhipin") ? BOSS_CONTENT_UNITS : null;
+      : (crawler.name === "boss_zhipin") ? BOSS_CONTENT_UNITS
+      : (crawler.name === "douyin") ? DOUYIN_CONTENT_UNITS
+      : (crawler.name === "xueshu") ? SCHOLAR_CONTENT_UNITS : null;
 
     if (contentUnits && contentUnits.length > 0) {
       const { mode } = await inq.prompt([{ type: "list", name: "mode", message: "选择采集模式：", choices: [
@@ -97,6 +99,7 @@ async function handleUnitsMode(crawler: ISiteCrawler, contentUnits: readonly Con
   else if (crawler.name === "zhihu") resolved = resolveZhihuUrl(action.url || "");
   else if (crawler.name === "xiaohongshu") resolved = resolveXiaohongshuUrl(action.url || "");
   else if (crawler.name === "tiktok") resolved = resolveTikTokUrl(action.url || "");
+  else if (crawler.name === "douyin") resolved = resolveDouyinUrl(action.url || "");
 
   if (resolved.bvid && !resolved.aid) {
     try {

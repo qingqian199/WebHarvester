@@ -35,6 +35,16 @@ export type BiliContentUnit =
   | "bili_video_comments"
   | "bili_video_sub_replies";
 
+/** 抖音内容单元类型。 */
+export type DouyinContentUnit =
+  | "douyin_video_comments"
+  | "douyin_video_sub_replies";
+
+/** 百度学术内容单元类型。 */
+export type ScholarContentUnit =
+  | "scholar_search"
+  | "scholar_paper_detail";
+
 /** BOSS直聘内容单元类型。 */
 export type BossContentUnit =
   | "boss_city_list"
@@ -98,6 +108,16 @@ export const BOSS_CONTENT_UNITS: ContentUnitDef[] = [
   { id: "boss_industry_filter", label: "行业过滤列表", requiredParams: [], description: "行业免过滤配置" },
   { id: "boss_search", label: "搜索职位", requiredParams: ["keyword"], optionalParams: ["city", "page"], description: "按关键词搜索职位（city: 城市代码）" },
   { id: "boss_job_detail", label: "职位详情", requiredParams: ["jobId"], description: "单个职位的详细信息" },
+];
+
+export const DOUYIN_CONTENT_UNITS: ContentUnitDef[] = [
+  { id: "douyin_video_comments", label: "视频评论（含子回复）", requiredParams: ["aweme_id"], optionalParams: ["max_pages", "max_sub_reply_pages"], description: "视频完整评论 + 自动展开子回复（同一浏览器会话内完成，最多 50 条有回复的评论）" },
+  { id: "douyin_video_sub_replies", label: "子回复（已合并到评论）", requiredParams: [], description: "已合并到「视频评论」单元，同时勾选时自动展开" },
+];
+
+export const SCHOLAR_CONTENT_UNITS: ContentUnitDef[] = [
+  { id: "scholar_search", label: "搜索论文", requiredParams: ["keyword"], optionalParams: ["max_pages"], description: "按关键词搜索论文，返回标题/作者/摘要/期刊/DOI/引用数等（HTTP 直连快速翻页）" },
+  { id: "scholar_paper_detail", label: "论文详情", requiredParams: [], optionalParams: ["max_details"], description: "深度字段：作者单位/卷期页码/基金/参考文献/引用关系/PDF链接等（浏览器逐篇提取 SSR 数据）" },
 ];
 
 /** 单个单元的采集结果。 */

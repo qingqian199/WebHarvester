@@ -246,6 +246,54 @@ export abstract class BaseCrawler implements ISiteCrawler {
   /** ChromeService CDP 连接端口，由 index.ts 启动时设置。 */
   static chromeServicePort = 9222;
 
+  /**
+   * 统一 Fetch 策略：按优先级依次尝试不同数据源。
+   *
+   * 支持三种策略模式：
+   * - "api"：HTTP API 直连（fetch/fetchWithRetry）
+   * - "browser"：浏览器页面提取
+   * - "auto"：先 API，API 失败后自动降级到浏览器
+   *
+   * @param type 数据源类型标识（仅用于日志）
+   * @param apiFn API 调用函数（返回 code=0 表示成功）
+   * @param pageFn 浏览器提取函数
+   * @param strategy 策略模式（默认 "auto"）
+   */
+  protected async fetchStrategy<T>(
+    type: string,
+    apiFn: () => Promise<{ code: number; data?: T } | null>,
+    pageFn: () => Promise<{ data?: T; responseTime: number }>,
+    strategy: "api" | "browser" | "auto" = "auto",
+  ): Promise<{ data: T | null; method: string; responseTime: number; error?: string }> {
+    if (strategy === "browser") {
+      const result = await pageFn();
+      return { data: result.data ?? null, method: "html_extract", responseTime: result.responseTime };
+    }
+
+    // API 直连
+    if (strategy === "api" || strategy === "auto") {
+      try {
+        const result = await apiFn();
+        if (result && result.code === 0 && result.data) {
+          return { data: result.data, method: "signature", responseTime: 0 };
+        }
+      } catch {}
+    }
+
+    if (strategy === "api") {
+      return { data: null, method: "signature", responseTime: 0, error: `${type} API 返回异常` };
+    }
+
+    // auto 模式降级到浏览器
+    const result = await pageFn();
+    return {
+      data: result.data ?? null,
+      method: "html_extract",
+      responseTime: result.responseTime,
+      error: `${type} API 不可用，降级到页面提取`,
+    };
+  }
+
   /** 快速检查 ChromeService CDP 是否可用。 */
   private async quickCdpCheck(): Promise<boolean> {
     if (!FeatureFlags.enableChromeService) return false;

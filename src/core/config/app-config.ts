@@ -154,6 +154,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     xiaohongshu: "enabled",
     zhihu: "disabled",
     tiktok: "enabled",
+    bilibili: "enabled",
+    boss_zhipin: "disabled",
+    douyin: "enabled",
+    xueshu: "enabled",
   },
   rateLimit: DEFAULT_RATE_LIMIT_CONFIG,
 };

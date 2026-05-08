@@ -59,7 +59,103 @@ export class ZhihuCrawler extends BaseCrawler {
   readonly name = "zhihu";
   readonly domain = ZHIHU_DOMAIN;
 
-  constructor(proxyProvider?: IProxyProvider) { super("zhihu", proxyProvider); }
+  constructor(proxyProvider?: IProxyProvider) { super("zhihu", proxyProvider); this.registerHandlers(); }
+
+  private registerHandlers(): void {
+    this.unitHandlers.set("zhihu_user_info", async (unit, params, session) => {
+      if (this.rateLimiter.isPaused) {
+        return { unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 };
+      }
+      const r = await this.fetchApi("当前用户", {}, session);
+      return { unit, status: "success", data: JSON.parse(r.body), method: "signature", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("zhihu_search", async (unit, params, session) => {
+      const r = await this.fetchPageData("search", { keyword: params.keyword || "" }, session);
+      const parsed = JSON.parse(r.body);
+      return { unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("zhihu_article", async (unit, params, session) => {
+      const r = await this.fetchPageData("article", { article_id: params.article_id || "" }, session);
+      const parsed = JSON.parse(r.body);
+      return { unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("zhihu_hot_search", async (unit, params, session) => {
+      if (this.rateLimiter.isPaused) {
+        return { unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 };
+      }
+      const r = await this.fetchApi("热门搜索", {}, session);
+      const d = JSON.parse(r.body);
+      return { unit, status: d.code === 0 || r.statusCode === 200 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("zhihu_comments", async (unit, params, session) => {
+      const aid = params.answer_id || params.article_id || "";
+      if (!aid) return { unit, status: "failed", data: null, method: "none", error: "缺少 answer_id", responseTime: 0 };
+      const maxPages = Math.min(parseInt(params.max_pages || "3"), 10);
+      let allComments: any[] = [];
+      let totalTime = 0;
+      let cursor = "";
+      for (let page = 0; page < maxPages; page++) {
+        try {
+          const r = await this.fetchApi("回答评论", { answer_id: aid, cursor }, session);
+          const d = JSON.parse(r.body);
+          totalTime += r.responseTime;
+          if (Array.isArray(d.data)) {
+            allComments = allComments.concat(d.data);
+            if (d.paging?.is_end) break;
+            cursor = d.paging?.next || "";
+          } else break;
+        } catch { break; }
+      }
+      return { unit, status: allComments.length > 0 ? "success" : "partial", data: { data: allComments, paging: { totals: allComments.length } }, method: "signature", responseTime: totalTime };
+    });
+
+    this.unitHandlers.set("zhihu_sub_replies", async (unit, params, session, _authMode, results) => {
+      const aid2 = params.answer_id || "";
+      if (!aid2) return { unit, status: "failed", data: null, method: "none", error: "缺少 answer_id", responseTime: 0 };
+      const root = params.root || "";
+      const maxSub = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
+
+      let rootItems: any[];
+      if (root) {
+        rootItems = [{ id: root }];
+      } else {
+        const commentsResult: any = results?.find((r) => r.unit === "zhihu_comments" && r.status === "success");
+        if (!commentsResult) return { unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「回答评论」", responseTime: 0 };
+        rootItems = commentsResult.data?.data || [];
+        if (rootItems.length === 0) return { unit, status: "success", data: { data: [], paging: { totals: 0 } }, method: "signature", responseTime: 0 };
+      }
+
+      const traverseResult = await this.traverseSubReplies(rootItems, {
+        rootIdExtractor: (item: any) => String(item.id),
+        maxPages: maxSub,
+        staggerMs: 500,
+        fetchPage: async (rootId, cursor) => {
+          const r = await this.fetchApi("回答子回复", { comment_id: String(rootId), cursor: String(cursor) }, session);
+          const d = JSON.parse(r.body);
+          if (Array.isArray(d.data)) {
+            return {
+              replies: d.data,
+              hasMore: !(d.paging?.is_end ?? true),
+              nextCursor: d.paging?.next || "",
+              responseTime: r.responseTime,
+            };
+          }
+          return { replies: [], hasMore: false, nextCursor: "", responseTime: 0 };
+        },
+      });
+
+      return {
+        unit, status: "success",
+        data: { data: traverseResult.byRpid, paging: { totals: traverseResult.totalReplies } },
+        method: "signature",
+        responseTime: traverseResult.totalTime,
+      };
+    });
+  }
 
   matches(url: string): boolean {
     try {
@@ -163,108 +259,9 @@ export class ZhihuCrawler extends BaseCrawler {
     for (const unit of shuffled) {
       const start = Date.now();
       try {
-        switch (unit) {
-          case "zhihu_user_info": {
-            if (this.rateLimiter.isPaused) {
-              results.push({ unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 });
-              break;
-            }
-            const r = await this.fetchApi("当前用户", {}, session);
-            results.push({ unit, status: "success", data: JSON.parse(r.body), method: "signature", responseTime: r.responseTime });
-            break;
-          }
-          case "zhihu_search": {
-            const r = await this.fetchPageData("search", { keyword: params.keyword || "" }, session);
-            const parsed = JSON.parse(r.body);
-            results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
-            break;
-          }
-          case "zhihu_article": {
-            const r = await this.fetchPageData("article", { article_id: params.article_id || "" }, session);
-            const parsed = JSON.parse(r.body);
-            results.push({ unit, status: "success", data: parsed, method: "html_extract", responseTime: r.responseTime });
-            break;
-          }
-          case "zhihu_hot_search": {
-            if (this.rateLimiter.isPaused) {
-              results.push({ unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 });
-              break;
-            }
-            const r = await this.fetchApi("热门搜索", {}, session);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 || r.statusCode === 200 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime });
-            break;
-          }
-          case "zhihu_comments": {
-            const aid = params.answer_id || params.article_id || "";
-            if (!aid) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 answer_id", responseTime: 0 }); break; }
-            const maxPages = Math.min(parseInt(params.max_pages || "3"), 10);
-            let allComments: any[] = [];
-            let totalTime = 0;
-            let cursor = "";
-            for (let page = 0; page < maxPages; page++) {
-              try {
-                const r = await this.fetchApi("回答评论", { answer_id: aid, cursor }, session);
-                const d = JSON.parse(r.body);
-                totalTime += r.responseTime;
-                if (Array.isArray(d.data)) {
-                  allComments = allComments.concat(d.data);
-                  if (d.paging?.is_end) break;
-                  cursor = d.paging?.next || "";
-                } else break;
-              } catch { break; }
-            }
-            results.push({ unit, status: allComments.length > 0 ? "success" : "partial", data: { data: allComments, paging: { totals: allComments.length } }, method: "signature", responseTime: totalTime });
-            break;
-          }
-          case "zhihu_sub_replies": {
-            const aid2 = params.answer_id || "";
-            if (!aid2) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 answer_id", responseTime: 0 }); break; }
-            const root = params.root || "";
-            const maxSub = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
-
-            let rootItems: any[];
-            if (root) {
-              rootItems = [{ id: root }];
-            } else {
-              const commentsResult: any = results.find((r) => r.unit === "zhihu_comments" && r.status === "success");
-              if (!commentsResult) { results.push({ unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「回答评论」", responseTime: 0 }); break; }
-              rootItems = commentsResult.data?.data || [];
-              if (rootItems.length === 0) { results.push({ unit, status: "success", data: { data: [], paging: { totals: 0 } }, method: "signature", responseTime: 0 }); break; }
-            }
-
-            const traverseResult = await this.traverseSubReplies(rootItems, {
-              rootIdExtractor: (item: any) => String(item.id),
-              maxPages: maxSub,
-              staggerMs: 500,
-              fetchPage: async (rootId, cursor) => {
-                const r = await this.fetchApi("回答子回复", { comment_id: String(rootId), cursor: String(cursor) }, session);
-                const d = JSON.parse(r.body);
-                if (Array.isArray(d.data)) {
-                  return {
-                    replies: d.data,
-                    hasMore: !(d.paging?.is_end ?? true),
-                    nextCursor: d.paging?.next || "",
-                    responseTime: r.responseTime,
-                  };
-                }
-                return { replies: [], hasMore: false, nextCursor: "", responseTime: 0 };
-              },
-            });
-
-            results.push({
-              unit, status: "success",
-              data: { data: traverseResult.byRpid, paging: { totals: traverseResult.totalReplies } },
-              method: "signature",
-              responseTime: traverseResult.totalTime,
-            });
-            break;
-          }
-          default:
-            results.push({ unit, status: "failed", data: null, method: "none", error: "未知单元", responseTime: 0 });
-        }
-      } catch (e: any) {
-        results.push({ unit, status: "failed", data: null, method: "none", error: e.message, responseTime: Date.now() - start });
+        results.push(await this.dispatchUnit(unit, params, session, undefined, results));
+      } catch (e: unknown) {
+        results.push({ unit, status: "failed", data: null, method: "none", error: e instanceof Error ? e.message : String(e), responseTime: Date.now() - start });
       }
     }
     return results;

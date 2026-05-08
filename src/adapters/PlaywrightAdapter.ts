@@ -89,12 +89,75 @@ export class PlaywrightAdapter implements IBrowserAdapter {
     }
   }
 
-  async captureNetworkRequests(_config: {
+  async captureNetworkRequests(config: {
     captureAll: boolean;
     enhancedFullCapture?: boolean;
   }): Promise<NetworkRequest[]> {
     const page = this.lcm.getPage();
     await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+
+    // 增强模式：尝试点击展开/加载更多按钮 + 滚动触发懒加载
+    if (config.enhancedFullCapture) {
+      try {
+        // 第1步：尝试批量点击常见的"展开/加载更多"按钮
+        const expandSelectors = [
+          "text=展开", "text=加载更多", "text=查看全部", "text=查看更多回复",
+          "text=展开回复", "text=查看更多评论", "text=显示更多",
+          ".load-more", ".load-more-comments", ".comment-expand",
+          ".see-more", ".view-more", ".expand-btn", ".expand-button",
+          "[class*=load-]", "[class*=loadmore]", "[class*=expand]",
+        ];
+        for (const sel of expandSelectors) {
+          try {
+            const btns = await page.$$(sel);
+            for (const btn of btns) {
+              const box = await btn.boundingBox();
+              if (!box || box.width < 5 || box.height < 5) continue;
+              await btn.click({ timeout: 1000 }).catch(() => {});
+              await new Promise((r) => setTimeout(r, 200 + Math.floor(Math.random() * 150)));
+            }
+          } catch { /* 选择器无匹配跳过 */ }
+        }
+        await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+
+        // 第2步：模拟页面滚动触发懒加载
+        await page.evaluate(async () => {
+          const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+          for (let i = 0; i < 15; i++) {
+            const currentHeight = document.body.scrollHeight;
+            window.scrollTo(0, currentHeight);
+            await delay(800 + Math.floor(Math.random() * 400));
+            const newHeight = document.body.scrollHeight;
+            if (newHeight <= currentHeight) {
+              // 没有新内容加载，等待一次后退出
+              await delay(500);
+              break;
+            }
+          }
+          window.scrollTo(0, 0);
+        }).catch(() => {});
+
+        // 第3步：滚动后再尝试点击可能新出现的展开按钮
+        for (const sel of [
+          "text=加载更多", "text=展开回复", "text=查看更多回复",
+          ".load-more", ".comment-expand",
+        ]) {
+          try {
+            const btns = await page.$$(sel);
+            for (const btn of btns) {
+              const box = await btn.boundingBox();
+              if (!box || box.width < 5 || box.height < 5) continue;
+              await btn.click({ timeout: 1000 }).catch(() => {});
+              await new Promise((r) => setTimeout(r, 300));
+            }
+          } catch { /* skip */ }
+        }
+        await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+      } catch {
+        // 增强交互失败不影响主流程
+      }
+    }
+
     await new Promise((r) => setTimeout(r, REQUEST_CAPTURE_EXTRA_WAIT_MS));
     return this.lcm.getCapturedRequests();
   }
@@ -163,6 +226,11 @@ export class PlaywrightAdapter implements IBrowserAdapter {
 
   getPageMetrics() {
     return this.lcm.getPageMetrics();
+  }
+
+  /** 获取页面诊断数据（console 消息 + JS 错误）。 */
+  getPageDiagnostics(): { consoleMessages: Array<{ type: string; text: string }>; pageErrors: Array<{ message: string; stack?: string }> } {
+    return this.lcm.getPageDiagnostics();
   }
 
   async close(): Promise<void> {

@@ -151,6 +151,98 @@ function sheetZhihuArticle(data: any): XLSX.WorkSheet {
   return XLSX.utils.aoa_to_sheet(rows);
 }
 
+function sheetDouyinComments(data: any): XLSX.WorkSheet {
+  const d = data?.data || data;
+  const list = d?.comments || [];
+  const rows = [
+    ["用户名", "评论内容", "点赞数", "发布时间", "评论ID", "回复数"],
+    ...list.map((c: any) => [
+      c.user?.nickname || "",
+      snip(c.text || "", 300),
+      fmtCount(c.digg_count || 0),
+      c.create_time ? new Date(c.create_time * 1000).toLocaleString("zh-CN") : "",
+      String(c.cid || ""),
+      c.reply_comment_total || c._subReplyCount || 0,
+    ]),
+  ];
+  return XLSX.utils.aoa_to_sheet(rows);
+}
+
+function sheetDouyinSubReplies(data: any): XLSX.WorkSheet {
+  const d = data?.data || data;
+  const subReplies = d?.sub_replies || {};
+  const comments = d?.comments || [];
+  const rows = [
+    ["父评论ID", "父评论用户", "用户名", "子回复内容", "点赞数", "发布时间", "评论ID"],
+  ];
+  // 从 sub_replies 字典提取（经过深度翻页展开的）
+  for (const [cid, srData] of Object.entries(subReplies)) {
+    const replies = (srData as any)?.replies || [];
+    for (const sr of replies) {
+      rows.push([
+        cid,
+        "",
+        sr.user?.nickname || "",
+        snip(sr.text || "", 300),
+        fmtCount(sr.digg_count || 0),
+        sr.create_time ? new Date(sr.create_time * 1000).toLocaleString("zh-CN") : "",
+        String(sr.cid || ""),
+      ]);
+    }
+  }
+  // 从 comments 中的 reply_comment（初始嵌入的子回复，未被展开的）
+  for (const c of comments) {
+    const cid = String(c.cid || "");
+    const initial = Array.isArray(c.reply_comment) ? c.reply_comment : [];
+    for (const sr of initial) {
+      if (subReplies[cid]?.replies?.some((r: any) => r.cid === sr.cid)) continue;
+      rows.push([
+        cid,
+        c.user?.nickname || "",
+        sr.user?.nickname || "",
+        snip(sr.text || "", 300),
+        fmtCount(sr.digg_count || 0),
+        sr.create_time ? new Date(sr.create_time * 1000).toLocaleString("zh-CN") : "",
+        String(sr.cid || ""),
+      ]);
+    }
+  }
+  return rows.length > 1 ? XLSX.utils.aoa_to_sheet(rows) : XLSX.utils.aoa_to_sheet([["父评论ID", "父评论用户", "用户名", "子回复内容", "点赞数", "发布时间", "评论ID"], ["暂无子回复"]]);
+}
+
+/** 百度学术：论文搜索结果 + 详情合并表（每行一篇论文，含全部标准字段）。 */
+function sheetScholarPapers(data: any): XLSX.WorkSheet {
+  const d = data?._searchFallback || (data?.data?.papers) || [];
+  if (d.length === 0) return XLSX.utils.aoa_to_sheet([["无论文数据"]]);
+  // 标准字段列表（所有行统一，保证每篇论文都有相同的列）
+  const FIELDS = [
+    "序号", "标题", "作者", "作者单位", "发表年份", "期刊会议",
+    "卷", "期", "页码", "摘要", "关键词", "DOI", "被引次数",
+    "下载量", "基金项目", "参考文献", "作者邮箱", "导师信息",
+    "论文分类号", "原文链接", "备注",
+  ];
+  const rows: any[][] = [FIELDS];
+  d.forEach((p: any, idx: number) => {
+    rows.push(FIELDS.map((f) => {
+      if (f === "序号") return String(idx + 1);
+      const v = p[f];
+      if (v == null || v === "") return f === "备注" ? `采集于${new Date().toLocaleDateString("zh-CN")}` : "无";
+      if (Array.isArray(v)) return v.join("; ");
+      if (typeof v === "string") return v;
+      return String(v);
+    }));
+  });
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet["!cols"] = FIELDS.map((f) => {
+    if (["标题", "摘要", "参考文献"].includes(f)) return { wch: 50 };
+    if (["作者", "作者单位", "关键词", "原文链接"].includes(f)) return { wch: 30 };
+    if (f === "序号") return { wch: 6 };
+    if (f === "备注") return { wch: 20 };
+    return { wch: 14 };
+  });
+  return sheet;
+}
+
 function sheetXhsNoteDetail(data: any): XLSX.WorkSheet {
   const d = data?.data || data || {};
   const note = d?.note_detail_map || d?.note || d;
@@ -185,6 +277,10 @@ export function unitToSheet(unit: string, data: any): { name: string; sheet: XLS
     case "zhihu_search": return sheetOf("搜索结果", () => sheetList(data, ["标题", "类型", "赞同"], (r) => [snip(r?.title || r?.question?.title || "?", 80), r?.type || "", fmtCount(r?.voteup_count || 0)]));
     case "zhihu_article": return sheetOf("文章", () => sheetZhihuArticle(data));
     case "zhihu_hot_search": return sheetOf("热搜", () => sheetList(data, ["标题", "热度"], (r) => [r?.query || r?.title || r?.display_query || r?.word || "?", fmtCount(r?.heat || r?.hot_score || 0)]));
+    case "douyin_video_comments": return sheetOf("抖音评论", () => sheetDouyinComments(data));
+    case "douyin_video_sub_replies": return sheetOf("抖音子回复", () => sheetDouyinSubReplies(data));
+    case "scholar_search": return sheetOf("学术论文", () => sheetScholarPapers(data));
+    case "scholar_paper_detail": return sheetOf("论文详情", () => sheetScholarPapers(data));
     default: return sheetOf(unit, () => XLSX.utils.aoa_to_sheet([["数据"], [snip(JSON.stringify(data), 500)]]));
   }
 }

@@ -9,6 +9,8 @@ import { ZhihuCrawler } from "./adapters/crawlers/ZhihuCrawler";
 import { BilibiliCrawler } from "./adapters/crawlers/BilibiliCrawler";
 import { TikTokCrawler } from "./adapters/crawlers/TikTokCrawler";
 import { BossZhipinCrawler } from "./adapters/crawlers/BossZhipinCrawler";
+import { DouyinCrawler } from "./adapters/crawlers/DouyinCrawler";
+import { BaiduScholarCrawler } from "./adapters/crawlers/BaiduScholarCrawler";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
 import { RoundRobinProxyProvider } from "./adapters/RoundRobinProxyProvider";
 import { FeatureFlags, applyFeatureFlags } from "./core/features";
@@ -96,6 +98,8 @@ function createCrawlerDispatcher(appCfg: Awaited<ReturnType<typeof loadAppConfig
   if (appCfg.crawlers?.bilibili === "enabled") d.register(new BilibiliCrawler(globalProxyProvider));
   if (appCfg.crawlers?.tiktok === "enabled") d.register(new TikTokCrawler(globalProxyProvider));
   if (appCfg.crawlers?.boss_zhipin === "enabled") d.register(new BossZhipinCrawler(globalProxyProvider));
+  if (appCfg.crawlers?.douyin === "enabled") d.register(new DouyinCrawler(globalProxyProvider));
+  if (appCfg.crawlers?.xueshu === "enabled") d.register(new BaiduScholarCrawler(globalProxyProvider));
   return d;
 }
 

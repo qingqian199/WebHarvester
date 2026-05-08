@@ -10,6 +10,17 @@ export interface BiliVideoInfo {
     tname: string;
     owner: { name: string; mid: number };
     stat: { view: number; like: number; coin: number; favorite: number; share: number };
+    // View/detail 端点的附加字段
+    tags?: Array<{ tag_id: number; tag_name: string; [key: string]: unknown }>;
+    relates?: Array<Record<string, unknown>>;
+    season_id?: number;
+    season?: Record<string, unknown>;
+    ugc_season?: Record<string, unknown>;
+    honor_reply?: Record<string, unknown>;
+    activity?: Record<string, unknown>;
+    activity_season?: Record<string, unknown>;
+    player_info?: Record<string, unknown>;
+    rcmd_reason?: Record<string, unknown>;
     [key: string]: unknown;
   };
 }

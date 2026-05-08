@@ -81,3 +81,25 @@ export function resolveTikTokUrl(url: string): ResolvedParams {
   } catch { urlLogger.warn("resolveTikTokUrl: 解析失败", { url }); }
   return params;
 }
+
+/** 抖音 URL 解析 */
+export function resolveDouyinUrl(url: string): ResolvedParams {
+  const params: ResolvedParams = {};
+  try {
+    const u = new URL(url);
+    const path = u.pathname;
+    // /video/{aweme_id}
+    const videoMatch = path.match(/\/video\/(\d+)/);
+    if (videoMatch) params.aweme_id = videoMatch[1];
+    // /user/{sec_uid}
+    const userMatch = path.match(/\/user\/([A-Za-z0-9_-]+)/);
+    if (userMatch) params.sec_user_id = userMatch[1];
+    // jingxuan?modal_id={id}
+    const modalId = u.searchParams.get("modal_id");
+    if (modalId && !params.aweme_id) params.aweme_id = modalId;
+    // search?q=xxx or ?keyword=xxx
+    const qMatch = u.searchParams.get("q") || u.searchParams.get("keyword");
+    if (qMatch) params.keyword = qMatch;
+  } catch { urlLogger.warn("resolveDouyinUrl: 解析失败", { url }); }
+  return params;
+}

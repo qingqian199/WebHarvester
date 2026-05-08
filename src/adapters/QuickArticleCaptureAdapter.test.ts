@@ -17,6 +17,7 @@ function stubBrowser(): jest.Mocked<IBrowserAdapter> {
       return Promise.resolve("" as T);
     }),
     getPageMetrics: jest.fn().mockReturnValue(null),
+    getPageDiagnostics: jest.fn().mockReturnValue({ consoleMessages: [], pageErrors: [] }),
     close: jest.fn().mockResolvedValue(undefined),
   };
 }

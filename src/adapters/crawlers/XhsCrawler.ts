@@ -95,7 +95,94 @@ export class XhsCrawler extends BaseCrawler {
   readonly name = "xiaohongshu";
   readonly domain = XHS_DOMAIN;
 
-  constructor(proxyProvider?: IProxyProvider) { super("xiaohongshu", proxyProvider); }
+  constructor(proxyProvider?: IProxyProvider) { super("xiaohongshu", proxyProvider); this.registerHandlers(); }
+
+  private registerHandlers(): void {
+    this.unitHandlers.set("user_info", async (unit, params, session, authMode) => {
+      if (this.rateLimiter.isPaused) {
+        return { unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 };
+      }
+      const r = await this.fetchApi("用户信息", {}, session, authMode as "logged_in" | "guest");
+      return { unit, status: "success", data: JSON.parse(r.body).data ?? {}, method: "signature", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("user_posts", async (unit, params, session) => {
+      const r = await this.fetchPageData("用户主页", { user_id: params.user_id || "" }, session);
+      const parsed = JSON.parse(r.body);
+      return { unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("user_board", async (unit, params, session, authMode) => {
+      if (this.rateLimiter.isPaused) {
+        return { unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 };
+      }
+      const r = await this.fetchApi("收藏列表", {}, session, authMode as "logged_in" | "guest");
+      const d = JSON.parse(r.body);
+      return { unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime, error: d.code !== 0 ? d.msg || "签名偏差" : undefined };
+    });
+
+    this.unitHandlers.set("note_detail", async (unit, params, session) => {
+      const nid = params.note_id || "";
+      const r = await this.fetchPageData("笔记详情", { note_id: nid }, session);
+      const parsed = JSON.parse(r.body);
+      return { unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("search_notes", async (unit, params, session) => {
+      const kw = params.keyword || "";
+      const r = await this.fetchPageData("搜索笔记", { keyword: kw }, session);
+      const parsed = JSON.parse(r.body);
+      return { unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime };
+    });
+
+    this.unitHandlers.set("note_comments", async (unit, params, session) => {
+      const noteId = params.note_id || "";
+      if (!noteId) return { unit, status: "failed", data: null, method: "none", error: "缺少 note_id", responseTime: 0 };
+      const maxPages = Math.min(parseInt(params.max_pages || "3"), 10);
+      let allComments: any[] = [];
+      let totalTime = 0;
+      let cursor = "0";
+      for (let page = 0; page < maxPages; page++) {
+        try {
+          const r = await this.fetchApi("笔记评论", { note_id: noteId, cursor }, session);
+          const d = JSON.parse(r.body);
+          totalTime += r.responseTime;
+          if (d.code === 0 && d.data?.comments) {
+            allComments = allComments.concat(d.data.comments);
+            if (d.data.cursor?.is_end) break;
+            cursor = d.data.cursor?.next || "0";
+          } else break;
+        } catch { break; }
+      }
+      return { unit, status: allComments.length > 0 ? "success" : "partial", data: { code: 0, data: { comments: allComments, cursor: { all_count: allComments.length } } }, method: "signature", responseTime: totalTime };
+    });
+
+    this.unitHandlers.set("note_sub_replies", async (unit, params, session, _authMode, results) => {
+      const nid = params.note_id || "";
+      if (!nid) return { unit, status: "failed", data: null, method: "none", error: "缺少 note_id", responseTime: 0 };
+      const maxSub = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
+      const root = params.root || "";
+      let rootItems: any[];
+      if (root) {
+        rootItems = [{ id: root }];
+      } else {
+        const commentsResult: any = results?.find((r) => r.unit === "note_comments" && r.status === "success");
+        if (!commentsResult) return { unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「笔记评论」采集单元", responseTime: 0 };
+        rootItems = commentsResult.data?.data?.comments || [];
+        if (rootItems.length === 0) return { unit, status: "success", data: { code: 0, data: { comments: {}, total_replies: 0, expanded_count: 0 } }, method: "signature", responseTime: 0 };
+      }
+      const tr = await this.traverseSubReplies(rootItems, {
+        rootIdExtractor: (item: any) => String(item.id), maxPages: maxSub, staggerMs: 500,
+        fetchPage: async (rootId, cursor) => {
+          const r = await this.fetchApi("笔记子回复", { note_id: nid, rpid: String(rootId), cursor: String(cursor) }, session);
+          const d = JSON.parse(r.body);
+          if (d.code === 0 && d.data?.comments) return { replies: d.data.comments, hasMore: !(d.data.cursor?.is_end ?? true), nextCursor: d.data.cursor?.next || "0", responseTime: r.responseTime };
+          return { replies: [], hasMore: false, nextCursor: "0", responseTime: 0 };
+        },
+      });
+      return { unit, status: "success", data: { code: 0, data: { comments: tr.byRpid, total_replies: tr.totalReplies, expanded_count: tr.expandedCount } }, method: "signature", responseTime: tr.totalTime };
+    });
+  }
 
   matches(url: string): boolean {
     try {
@@ -165,12 +252,6 @@ export class XhsCrawler extends BaseCrawler {
     } catch { return false; }
   }
 
-  /**
-   * 通过端点名称和参数执行 API 请求。
-   * @param endpointName XhsApiEndpoints 中的 name。
-   * @param params 查询参数字符串（如 "keyword=test"），不传则使用默认参数。
-   * @param session 可选登录态。
-   */
   /**
    * 执行 API 调用。
    * @param endpointName 端点名（XhsApiEndpoints 中的 name）。
@@ -385,97 +466,7 @@ export class XhsCrawler extends BaseCrawler {
     for (const unit of shuffled) {
       const start = Date.now();
       try {
-        switch (unit) {
-          case "user_info": {
-            if (this.rateLimiter.isPaused) {
-              results.push({ unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 });
-              break;
-            }
-            const r = await this.fetchApi("用户信息", {}, session, authMode);
-            results.push({ unit, status: "success", data: JSON.parse(r.body).data ?? {}, method: "signature", responseTime: r.responseTime });
-            break;
-          }
-          case "user_posts": {
-            const r = await this.fetchPageData("用户主页", { user_id: params.user_id || "" }, session);
-            const parsed = JSON.parse(r.body);
-            results.push({ unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime });
-            break;
-          }
-          case "user_board": {
-            if (this.rateLimiter.isPaused) {
-              results.push({ unit, status: "partial", data: null, method: "none", error: "站点冷却中，跳过签名请求", responseTime: 0 });
-              break;
-            }
-            const r = await this.fetchApi("收藏列表", {}, session, authMode);
-            const d = JSON.parse(r.body);
-            results.push({ unit, status: d.code === 0 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime, error: d.code !== 0 ? d.msg || "签名偏差" : undefined });
-            break;
-          }
-          case "note_detail": {
-            const nid = params.note_id || "";
-            const r = await this.fetchPageData("笔记详情", { note_id: nid }, session);
-            const parsed = JSON.parse(r.body);
-            results.push({ unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime });
-            break;
-          }
-          case "search_notes": {
-            const kw = params.keyword || "";
-            const r = await this.fetchPageData("搜索笔记", { keyword: kw }, session);
-            const parsed = JSON.parse(r.body);
-            results.push({ unit, status: parsed ? "success" : "partial", data: parsed, method: "html_extract", responseTime: r.responseTime });
-            break;
-          }
-          case "note_comments": {
-            const noteId = params.note_id || "";
-            if (!noteId) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 note_id", responseTime: 0 }); break; }
-            const maxPages = Math.min(parseInt(params.max_pages || "3"), 10);
-            let allComments: any[] = [];
-            let totalTime = 0;
-            let cursor = "0";
-            for (let page = 0; page < maxPages; page++) {
-              try {
-                const r = await this.fetchApi("笔记评论", { note_id: noteId, cursor }, session);
-                const d = JSON.parse(r.body);
-                totalTime += r.responseTime;
-                if (d.code === 0 && d.data?.comments) {
-                  allComments = allComments.concat(d.data.comments);
-                  if (d.data.cursor?.is_end) break;
-                  cursor = d.data.cursor?.next || "0";
-                } else break;
-              } catch { break; }
-            }
-            results.push({ unit, status: allComments.length > 0 ? "success" : "partial", data: { code: 0, data: { comments: allComments, cursor: { all_count: allComments.length } } }, method: "signature", responseTime: totalTime });
-            break;
-          }
-          case "note_sub_replies": {
-            const nid = params.note_id || "";
-            if (!nid) { results.push({ unit, status: "failed", data: null, method: "none", error: "缺少 note_id", responseTime: 0 }); break; }
-            const maxSub = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
-            const root = params.root || "";
-            let rootItems: any[];
-            if (root) {
-              rootItems = [{ id: root }];
-            } else {
-              const commentsResult: any = results.find((r) => r.unit === "note_comments" && r.status === "success");
-              if (!commentsResult) { results.push({ unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「笔记评论」采集单元", responseTime: 0 }); break; }
-              rootItems = commentsResult.data?.data?.comments || [];
-              if (rootItems.length === 0) { results.push({ unit, status: "success", data: { code: 0, data: { comments: {}, total_replies: 0, expanded_count: 0 } }, method: "signature", responseTime: 0 }); break; }
-            }
-            const tr = await this.traverseSubReplies(rootItems, {
-              rootIdExtractor: (item: any) => String(item.id), maxPages: maxSub, staggerMs: 500,
-              fetchPage: async (rootId, cursor) => {
-                const r = await this.fetchApi("笔记子回复", { note_id: nid, rpid: String(rootId), cursor: String(cursor) }, session);
-                const d = JSON.parse(r.body);
-                if (d.code === 0 && d.data?.comments) return { replies: d.data.comments, hasMore: !(d.data.cursor?.is_end ?? true), nextCursor: d.data.cursor?.next || "0", responseTime: r.responseTime };
-                return { replies: [], hasMore: false, nextCursor: "0", responseTime: 0 };
-              },
-            });
-            results.push({ unit, status: "success", data: { code: 0, data: { comments: tr.byRpid, total_replies: tr.totalReplies, expanded_count: tr.expandedCount } }, method: "signature", responseTime: tr.totalTime });
-            break;
-          }
-          default:
-            results.push({ unit, status: "failed", data: null, method: "none", error: `未知单元: ${unit}`, responseTime: 0 });
-        }
+        results.push(await this.dispatchUnit(unit, params, session, authMode, results));
       } catch (e: any) {
         results.push({ unit, status: "failed", data: null, method: "none", error: e.message, responseTime: Date.now() - start });
       }

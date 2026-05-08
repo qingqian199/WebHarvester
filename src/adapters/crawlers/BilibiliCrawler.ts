@@ -2,7 +2,7 @@ import { CrawlerSession, PageData } from "../../core/ports/ISiteCrawler";
 import { IProxyProvider } from "../../core/ports/IProxyProvider";
 import { buildSignedQuery } from "../../utils/crypto/bilibili-signer";
 import { UnitResult } from "../../core/models/ContentUnit";
-import { BiliVideoInfo, BiliComments, BiliSearchResult, BiliUserVideos, BiliCommentItem } from "../../core/models/crawler-data";
+import { BiliComments, BiliSearchResult, BiliUserVideos, BiliCommentItem } from "../../core/models/crawler-data";
 import { resolveBilibiliUrl } from "../../utils/url-resolver";
 import { BaseCrawler } from "./BaseCrawler";
 
@@ -17,7 +17,7 @@ export interface BiliEndpointDef {
   status?: "verified" | "sig_pending";
 }
 
-const DEFAULT_IMG_KEY = "4932caff0ff746eab6f01bf08b70ac45";
+const DEFAULT_IMG_KEY = "7cd084941338484aae1ad9425b84077c";
 const DEFAULT_SUB_KEY = "4932caff0ff746eab6f01bf08b70ac45";
 
 export const BiliFallbackEndpoints: ReadonlyArray<{
@@ -30,6 +30,7 @@ export const BiliFallbackEndpoints: ReadonlyArray<{
 
 export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
   { name: "视频信息", path: "/x/web-interface/view", needWbi: false, params: "aid={aid}", status: "verified" },
+  { name: "视频详情(wbi)", path: "/x/web-interface/wbi/view/detail", needWbi: true, params: "aid={aid}&need_view=1", status: "verified" },
   { name: "弹幕列表", path: "/x/v2/dm/web/view", params: "oid=37660265907&type=1", status: "verified" },
   { name: "字幕信息", path: "/x/v2/subtitle/web/view", params: "oid=37660265907", status: "verified" },
   { name: "直播间信息", path: "/xlive/web-room/v1/index/getRoomBaseInfo", params: "uids=173323339&req_biz=video", status: "verified" },
@@ -37,12 +38,28 @@ export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
   { name: "视频子回复", path: "/x/v2/reply", params: "oid={oid}&type=1&root={root}&ps=20", status: "verified" },
   { name: "搜索综合", path: "/x/web-interface/wbi/search/all/v2", needWbi: true, params: "keyword=%E5%8E%9F%E7%A5%9E&page=1", status: "verified" },
   { name: "搜索 type", path: "/x/web-interface/wbi/search/type", needWbi: true, params: "keyword=%E5%8E%9F%E7%A5%9E&search_type=video&page=1", status: "verified" },
-  { name: "弹幕数据(分段)", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid=37660265907&type=1&segment_index=1", status: "sig_pending" },
+  { name: "弹幕数据(分段)", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid={oid}&type=1&segment_index=1", status: "verified" },
   { name: "用户空间信息", path: "/x/space/wbi/acc/info", needWbi: true, params: "mid=316627722", status: "sig_pending" },
   { name: "用户投稿", path: "/x/space/wbi/arc/search", needWbi: true, params: "mid=PLACEHOLDER&ps=5&pn=1", status: "sig_pending" },
 ];
 
 export class BilibiliCrawler extends BaseCrawler {
+  /**
+   * Bilibili 内容爬虫。
+   *
+   * ## API 签名
+   * - WBI 签名（w_rid + wts）：已验证通过，参考 HAR 捕获的 player/wbi/v2 和 view/detail 端点
+   * - 签名范围：请求 URL 的所有查询参数（含前端自动注入的 dm_img_* 追踪参数）
+   * - 弹幕分段 API（/x/v2/dm/wbi/web/seg.so）同样使用 WBI 签名
+   *
+   * ## CSRF 令牌
+   * - GET 请求不需要 CSRF Token。如未来需 POST（如心跳/点击统计），
+   *   从 Cookie bili_jct 提取作为 csrf 参数（HAR 捕获已验证有效）
+   *
+   * ## Gaia 设备指纹
+   * - 不需要专门处理。SESSDATA 会话已完成设备注册（ExClimbWuzhi 调用已在页面加载时完成），
+   *   API 直连已验证返回 code=0，无设备风控触发
+   */
   readonly name = "bilibili";
   readonly domain = BILI_DOMAIN;
   private imgKey = DEFAULT_IMG_KEY;
@@ -52,20 +69,89 @@ export class BilibiliCrawler extends BaseCrawler {
 
   private registerHandlers(): void {
     this.unitHandlers.set("bili_video_info", async (unit, params, session) => {
-      const r = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
-      const d: BiliVideoInfo = JSON.parse(r.body);
-      if (d.code === -352) {
-        this.logger.warn("⚠️ B站签名触发风控 -352，3秒后重试...");
-        await new Promise((r2) => setTimeout(r2, 3000));
-        const r2 = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
-        const d2: BiliVideoInfo = JSON.parse(r2.body);
-        if (d2.code === 0) return { unit, status: "success", data: d2, method: "signature", responseTime: r2.responseTime };
-        this.logger.warn("⚠️ B站签名 -352 重试仍失败，降级到页面提取");
-        const pr = await this.fetchPageData("视频详情", { bvid: params.bvid || params.aid || "" }, session);
-        return { unit, status: "partial", data: JSON.parse(pr.body) as Record<string, unknown>, method: "html_extract", responseTime: pr.responseTime, error: "签名风控，降级到页面提取" };
+      // 优先使用 WBI 签名的视频详情端（含标签、相关视频、合集等丰富数据）
+      let data: Record<string, unknown> | null = null;
+      let method = "signature";
+      let responseTime = 0;
+
+      if (params.aid) {
+        try {
+          const r = await this.fetchApi("视频详情(wbi)", { aid: params.aid }, session);
+          const d = JSON.parse(r.body) as Record<string, unknown>;
+          responseTime = r.responseTime;
+          if (d.code === 0) { data = d; }
+          else if (d.code === -352) {
+            this.logger.warn("⚠️ B站 WBI 签名触发风控 -352，3秒后重试...");
+            await new Promise((r2) => setTimeout(r2, 3000));
+            const r2 = await this.fetchApi("视频详情(wbi)", { aid: params.aid }, session);
+            const d2 = JSON.parse(r2.body) as Record<string, unknown>;
+            responseTime += r2.responseTime;
+            if (d2.code === 0) { data = d2; }
+            else { this.logger.warn("⚠️ B站 WBI 重试仍失败，降级到基础端点"); }
+          }
+        } catch {
+          this.logger.warn("⚠️ 视频详情(wbi) 端点异常，降级到基础端点");
+        }
       }
-      if (d.code === 0) return { unit, status: "success", data: d, method: "signature", responseTime: r.responseTime };
-      return { unit, status: "failed", data: null, method: "signature", responseTime: r.responseTime, error: `业务错误码: ${d.code}` };
+
+      // 降级：使用基础 API 端点
+      if (!data) {
+        try {
+          const r = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
+          const d = JSON.parse(r.body) as Record<string, unknown>;
+          responseTime = r.responseTime;
+          if (d.code === 0) { data = d; method = "signature"; }
+          else if (d.code === -352) {
+            this.logger.warn("⚠️ B站基础 API 签名 -352，降级到页面提取");
+            const pr = await this.fetchPageData("视频详情", { bvid: params.bvid || params.aid || "" }, session);
+            return { unit, status: "partial", data: JSON.parse(pr.body) as Record<string, unknown>, method: "html_extract", responseTime: pr.responseTime, error: "签名风控，降级到页面提取" };
+          }
+        } catch {
+          this.logger.warn("⚠️ 基础 API 端点异常，降级到页面提取");
+          const pr = await this.fetchPageData("视频详情", { bvid: params.bvid || params.aid || "" }, session);
+          return { unit, status: "partial", data: JSON.parse(pr.body) as Record<string, unknown>, method: "html_extract", responseTime: pr.responseTime, error: "API 异常，降级到页面提取" };
+        }
+      }
+
+      if (!data) {
+        return { unit, status: "failed", data: null, method, responseTime, error: "所有数据源均失败" };
+      }
+
+      // 从 view/detail 响应中提取高价值字段
+      const detail = data.data as Record<string, unknown> | undefined;
+      if (detail) {
+        const enriched: Record<string, unknown> = { ...data };
+        // 标签: detail.View.tags 或 detail.tags
+        if (detail.View && typeof detail.View === "object") {
+          const view = detail.View as Record<string, unknown>;
+          if (view.tags) enriched.tags = view.tags;
+          if (view.season_id) enriched.season_id = view.season_id;
+          if (view.season) enriched.season = view.season;
+        }
+        if (detail.tags) enriched.tags = detail.tags;
+        // 相关视频
+        if (detail.Related && typeof detail.Related === "object") {
+          const rel = detail.Related as Record<string, unknown>;
+          if (rel.relates) enriched.relates = rel.relates;
+        }
+        if (detail.relates) enriched.relates = detail.relates;
+        // 推荐
+        if (detail.rcmd_reason) enriched.rcmd_reason = detail.rcmd_reason;
+        // 活动信息
+        if (detail.activity) enriched.activity = detail.activity;
+        if (detail.activity_season) enriched.activity_season = detail.activity_season;
+        // 荣誉
+        if (detail.honor_reply) enriched.honor_reply = detail.honor_reply;
+        // 合集/视频列表
+        if (detail.ugc_season) enriched.ugc_season = detail.ugc_season;
+        // 播放器信息
+        if (detail.player_info) enriched.player_info = detail.player_info;
+        // UP主推荐
+        if (detail.owner) enriched.owner_detail = detail.owner;
+        data = enriched;
+      }
+
+      return { unit, status: "success", data, method, responseTime };
     });
     this.unitHandlers.set("bili_search", async (unit, params, session) => {
       try {

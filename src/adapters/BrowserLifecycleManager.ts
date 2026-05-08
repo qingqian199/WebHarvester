@@ -24,6 +24,9 @@ export class BrowserLifecycleManager {
   private pageMetrics: PageLoadMetrics | null = null;
   private realHeaders: Map<string, Record<string, string>> = new Map();
 
+  private consoleMessages: Array<{ type: string; text: string }> = [];
+  private pageErrors: Array<{ message: string; stack?: string }> = [];
+
   constructor(private readonly logger: ILogger) { }
 
   startNetworkCapture(enableFullCapture?: boolean, captureAllTypes?: boolean): void {
@@ -150,6 +153,8 @@ export class BrowserLifecycleManager {
   ): Promise<Page> {
     this.capturedRequests.clear();
     this.isNetworkCaptureEnabled = false;
+    this.consoleMessages = [];
+    this.pageErrors = [];
 
     const args = [
       "--disable-blink-features=AutomationControlled",
@@ -181,6 +186,7 @@ export class BrowserLifecycleManager {
 
     this.context = await this.browser.newContext(contextOpts);
     this.page = await this.context.newPage();
+    this.startPageDiagnostics();
 
     await this.page.addInitScript((platform: string) => {
       // 隐藏自动化标志
@@ -253,10 +259,13 @@ export class BrowserLifecycleManager {
   async attachToContext(context: any, url: string, sessionState?: SessionState, pageSetup?: (page: any) => Promise<void>): Promise<void> {
     this.capturedRequests.clear();
     this.isNetworkCaptureEnabled = false;
+    this.consoleMessages = [];
+    this.pageErrors = [];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.context = context as any;
     this.pooled = true;
     this.page = await context.newPage();
+    this.startPageDiagnostics();
 
     if (sessionState) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -293,6 +302,26 @@ export class BrowserLifecycleManager {
   disableNetworkCapture(): void {
     this.isNetworkCaptureEnabled = false;
     this.page?.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
+  }
+
+  /** 启动页面诊断监听（console 消息 + JS 错误），在页面创建后调用。 */
+  private startPageDiagnostics(): void {
+    if (!this.page) return;
+    this.consoleMessages = [];
+    this.pageErrors = [];
+    this.page.on("console", (msg) => {
+      if (this.consoleMessages.length >= 500) return; // 防止内存溢出
+      this.consoleMessages.push({ type: msg.type(), text: msg.text().slice(0, 500) });
+    });
+    this.page.on("pageerror", (err) => {
+      if (this.pageErrors.length >= 100) return;
+      this.pageErrors.push({ message: err.message.slice(0, 500), stack: err.stack?.slice(0, 1000) });
+    });
+  }
+
+  /** 获取页面诊断数据。 */
+  getPageDiagnostics(): { consoleMessages: Array<{ type: string; text: string }>; pageErrors: Array<{ message: string; stack?: string }> } {
+    return { consoleMessages: this.consoleMessages, pageErrors: this.pageErrors };
   }
 
   async close(): Promise<void> {
