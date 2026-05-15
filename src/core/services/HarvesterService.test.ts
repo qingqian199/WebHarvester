@@ -45,6 +45,12 @@ function stubSessionManager(): ISessionManager {
     load: jest.fn() as any,
     listProfiles: jest.fn() as any,
     deleteProfile: jest.fn() as any,
+    validateSession: jest.fn() as any,
+    getSession: jest.fn() as any,
+    listAccounts: jest.fn() as any,
+    getNextActiveAccount: jest.fn() as any,
+    markInvalid: jest.fn() as any,
+    resetInvalidAccount: jest.fn() as any,
   };
 }
 

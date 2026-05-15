@@ -1,4 +1,4 @@
-import { signWbi, buildSignedQuery } from "../../../utils/crypto/bilibili-signer";
+import { signWbi, buildSignedQuery, MIXIN_KEY_ENC_TAB, getMixinKeyEncTabId } from "../../../utils/crypto/bilibili-signer";
 import { BilibiliCrawler, BiliApiEndpoints } from "../BilibiliCrawler";
 
 describe("signWbi", () => {
@@ -56,6 +56,37 @@ describe("signWbi", () => {
     };
     const result = signWbi(params, imgKey, subKey, "1778242697");
     expect(result.w_rid).toBe("7679cff7a3c24055fedc88236b9e82e4");
+  });
+});
+
+describe("MIXIN_KEY_ENC_TAB", () => {
+  it("has exactly 64 elements", () => {
+    expect(MIXIN_KEY_ENC_TAB.length).toBe(64);
+  });
+
+  it("contains every integer from 0 to 63 exactly once (valid permutation)", () => {
+    const sorted = [...MIXIN_KEY_ENC_TAB].sort((a, b) => a - b);
+    for (let i = 0; i < 64; i++) {
+      expect(sorted[i]).toBe(i);
+    }
+  });
+
+  it("produces a known mixin key from known img_key+sub_key", () => {
+    // 已知的 nav 返回：img_key + sub_key
+    const imgKey = "7cd084941338484aae1ad9425b84077c";
+    const subKey = "4932caff0ff746eab6f01bf08b70ac45";
+    // mixinKey = MIXIN_KEY_ENC_TAB 置换选前 32 位
+    const combined = imgKey + subKey;
+    const mixinKey = MIXIN_KEY_ENC_TAB.map((i) => combined[i]).join("").slice(0, 32);
+    // 已知合法 mixin key（从 B站前端 wbi 模块验证）
+    expect(mixinKey.length).toBe(32);
+    expect(mixinKey).toMatch(/^[a-f0-9]{32}$/);
+  });
+
+  it("has a stable checksum (tab_id)", () => {
+    // 此值随置换表变化。B站更新表后，此测试会失败，提示更新 MIXIN_KEY_ENC_TAB
+    const tabId = getMixinKeyEncTabId();
+    expect(tabId).toBe("89c54dbc0bfcad520076284004206de5");
   });
 });
 

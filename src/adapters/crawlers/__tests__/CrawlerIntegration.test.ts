@@ -45,7 +45,7 @@ describe("CrawlerIntegration: fetchWithRetry → risk codes → circuit breaker"
   let crawler: BilibiliCrawler;
   const site = "bilibili";
 
-  beforeEach(() => {
+  beforeEach(async () => {
     clearAllCooldowns();
     mockedFetch.mockReset();
 
@@ -53,7 +53,7 @@ describe("CrawlerIntegration: fetchWithRetry → risk codes → circuit breaker"
     const rl = getRateLimiter(site, { enabled: false });
     crawler = new BilibiliCrawler();
     crawler["rateLimiter"] = rl;
-    crawler.setWbiKeys("test_img_key", "test_sub_key");
+    await crawler.setWbiKeys("test_img_key", "test_sub_key");
   });
 
   afterEach(() => {
@@ -140,13 +140,13 @@ describe("CrawlerIntegration: fetchWithRetry → risk codes → circuit breaker"
 describe("CrawlerIntegration: collectUnits composition and dependencies", () => {
   let crawler: BilibiliCrawler;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     clearAllCooldowns();
     mockedFetch.mockReset();
     const rl = getRateLimiter("bilibili", { enabled: false });
     crawler = new BilibiliCrawler();
     crawler["rateLimiter"] = rl;
-    crawler.setWbiKeys("test_img_key", "test_sub_key");
+    await crawler.setWbiKeys("test_img_key", "test_sub_key");
   });
 
   afterEach(() => {

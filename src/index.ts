@@ -18,6 +18,7 @@ import { IProxyProvider } from "./core/ports/IProxyProvider";
 import { configureBackendClient } from "./utils/backend-client";
 import { formatError } from "./core/error/error-registry";
 import { highlightTitle, errorLabel } from "./utils/cli-ui";
+import { setChromeServiceInstance } from "./utils/chrome-service-bridge";
 import { startMainMenu, runAnalyzeFromMenu } from "./cli/main-menu";
 import { handleSingleHarvest } from "./cli/handlers/single-harvest";
 import { handleCrawlerCollect } from "./cli/handlers/crawler-collect";
@@ -132,6 +133,7 @@ async function bootstrap() {
   if (FeatureFlags.enableChromeService && appCfg.chromeService) {
     const { ChromeService } = await import("./services/ChromeService");
     chromeServiceInstance = new ChromeService(appCfg.chromeService.port, appCfg.chromeService.chromePath, appCfg.chromeService.userDataDir);
+    setChromeServiceInstance(chromeServiceInstance);
     chromeServiceInstance.start().then(async () => {
       BaseCrawler.chromeServicePort = chromeServiceInstance!.port;
       try {

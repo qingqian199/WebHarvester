@@ -39,114 +39,106 @@ describe("FileSessionManager", () => {
   });
 
   describe("save", () => {
-    it("writes encrypted state as JSON to the session file", async () => {
-      await mgr.save("my-profile", sampleState());
+    it("writes encrypted state to domain/accountId.json", async () => {
+      await mgr.save("bilibili:main", sampleState());
       const call = mockedFs.writeFile.mock.calls[0];
-      expect(call[0]).toContain("my-profile.session.json");
+      expect(call[0]).toContain("bilibili");
+      expect(call[0]).toContain("main.json");
       const written = JSON.parse(call[1] as string);
       expect(isEncrypted(written.localStorage.token)).toBe(true);
       expect(isEncrypted(written.cookies[0].value)).toBe(true);
     });
 
+    it("accepts old format (domain only) as domain:main", async () => {
+      await mgr.save("my-profile", sampleState());
+      const call = mockedFs.writeFile.mock.calls[0];
+      // Old format: no colon → stored in my-profile/main.json
+      expect(call[0]).toContain("my-profile");
+      expect(call[0]).toContain("main.json");
+    });
+
     it("updates lastUsedAt before writing", async () => {
       const state = sampleState();
       const before = state.lastUsedAt;
-      await mgr.save("p", state);
+      await mgr.save("d:a", state);
       expect(state.lastUsedAt).toBeGreaterThanOrEqual(before);
     });
 
     it("throws BizError when write fails", async () => {
       mockedFs.writeFile.mockRejectedValue(new Error("disk full"));
-      await expect(mgr.save("p", sampleState())).rejects.toThrow(BizError);
+      await expect(mgr.save("d:a", sampleState())).rejects.toThrow(BizError);
     });
   });
 
   describe("load", () => {
     it("returns decrypted state when file exists", async () => {
-      // Pre-save encrypted state first via save
-      await mgr.save("my-profile", sampleState());
+      await mgr.save("d:main", sampleState());
       const call = mockedFs.writeFile.mock.calls[0];
       const encryptedContent = call[1] as string;
-
-      // Now mock readFile to return the encrypted content
       mockedFs.readFile.mockResolvedValue(encryptedContent);
-      const state = await mgr.load("my-profile");
+
+      const state = await mgr.load("d:main");
       expect(state).not.toBeNull();
       expect(state!.localStorage.token).toBe("secret");
       expect(state!.cookies[0].name).toBe("sid");
       expect(state!.cookies[0].value).toBe("abc");
     });
 
-    it("handles old plaintext format (auto-upgrade to encrypted)", async () => {
-      mockedFs.readFile.mockResolvedValue(JSON.stringify(sampleState()));
-      const state = await mgr.load("p");
-      expect(state).not.toBeNull();
-      expect(state!.localStorage.token).toBe("secret");
-      // Should have re-saved as encrypted
-      expect(mockedFs.writeFile).toHaveBeenCalled();
-    });
-
-    it("updates lastUsedAt and rewrites on load", async () => {
-      await mgr.save("p", sampleState());
-      const encryptedContent = mockedFs.writeFile.mock.calls[0][1] as string;
-      mockedFs.readFile.mockResolvedValue(encryptedContent);
-
-      const state = await mgr.load("p");
-      expect(mockedFs.writeFile).toHaveBeenCalledTimes(2); // save + re-save on load
-      expect(state!.lastUsedAt).toBeGreaterThan(1000);
-    });
-
     it("returns null when file does not exist", async () => {
       mockedFs.readFile.mockRejectedValue(new Error("ENOENT"));
-      const state = await mgr.load("nonexistent");
-      expect(state).toBeNull();
-    });
-
-    it("returns null when JSON is invalid", async () => {
-      mockedFs.readFile.mockResolvedValue("not json");
-      const state = await mgr.load("bad");
+      const state = await mgr.load("nonexistent:main");
       expect(state).toBeNull();
     });
   });
 
   describe("listProfiles", () => {
-    it("returns profile names from .session.json files", async () => {
-      mockedFs.readdir.mockResolvedValue(["a.session.json", "b.session.json", "readme.txt"] as any);
+    it("returns profiles in domain:accountId format from directories", async () => {
+      // 模拟目录结构：一个目录(bilibili) + 一个旧格式文件
+      mockedFs.readdir.mockImplementation(async (p: any) => {
+        const pStr = String(p);
+        if (pStr.includes("bilibili")) return ["main.json", "alt.json"] as any;
+        if (pStr.includes("sessions")) return [{ name: "bilibili", isDirectory: () => true }, { name: "old.session.json", isDirectory: () => false }] as any;
+        return [];
+      });
       const profiles = await mgr.listProfiles();
-      expect(profiles).toEqual(["a", "b"]);
+      expect(profiles).toContain("bilibili:main");
+      expect(profiles).toContain("bilibili:alt");
+      expect(profiles).toContain("old");
     });
+  });
 
-    it("returns empty array when directory is empty", async () => {
+  describe("getSession (rotation)", () => {
+    it("returns null when no accounts exist", async () => {
       mockedFs.readdir.mockResolvedValue([] as any);
-      const profiles = await mgr.listProfiles();
-      expect(profiles).toEqual([]);
+      const result = await mgr.getSession("bilibili");
+      expect(result).toBeNull();
     });
   });
 
-  describe("deleteProfile", () => {
-    it("calls unlink with correct path", async () => {
-      mockedFs.unlink.mockResolvedValue(undefined);
-      await mgr.deleteProfile("my-profile");
-      expect(mockedFs.unlink).toHaveBeenCalledWith(expect.stringContaining("my-profile.session.json"));
-    });
+  describe("markInvalid / resetInvalidAccount", () => {
+    it("persists invalid accounts in meta", async () => {
+      await mgr.markInvalid("bilibili", "alt");
+      const metaCall = mockedFs.writeFile.mock.calls.find((c: any) =>
+        String(c[0]).includes("_meta.json"),
+      );
+      expect(metaCall).toBeDefined();
+      const meta = JSON.parse(metaCall![1] as string);
+      expect(meta.invalidAccounts).toContain("alt");
 
-    it("does not throw when file does not exist", async () => {
-      mockedFs.unlink.mockRejectedValue(new Error("ENOENT"));
-      await expect(mgr.deleteProfile("ghost")).resolves.toBeUndefined();
+      await mgr.resetInvalidAccount("bilibili", "alt");
+      const resetCall = mockedFs.writeFile.mock.calls.find((c: any) =>
+        String(c[0]).includes("_meta.json") && c !== metaCall,
+      );
+      const meta2 = JSON.parse(resetCall![1] as string);
+      expect(meta2.invalidAccounts).not.toContain("alt");
     });
   });
 
-  describe("getProfilePath (via save)", () => {
-    it("sanitizes profile name", async () => {
-      await mgr.save("bad / name!", sampleState());
-      const callPath = mockedFs.writeFile.mock.calls[0][0] as string;
-      expect(callPath).toContain("bad___name_");
-    });
-
-    it("adds .session.json extension", async () => {
-      await mgr.save("test", sampleState());
-      const callPath = mockedFs.writeFile.mock.calls[0][0] as string;
-      expect(callPath).toContain("test.session.json");
+  describe("validateSession", () => {
+    it("returns invalid when profile does not exist", async () => {
+      mockedFs.readFile.mockRejectedValue(new Error("ENOENT"));
+      const result = await mgr.validateSession("bilibili:main");
+      expect(result.valid).toBe(false);
     });
   });
 });

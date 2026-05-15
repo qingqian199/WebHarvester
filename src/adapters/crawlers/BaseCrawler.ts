@@ -294,7 +294,64 @@ export abstract class BaseCrawler implements ISiteCrawler {
     };
   }
 
-  /** 快速检查 ChromeService CDP 是否可用。 */
+  /**
+   * 通用浏览器页面数据提取。
+   * 自动执行滚动模拟、等待选择器、执行提取脚本。
+   */
+  protected async genericFetchPageData(
+    browser: PlaywrightAdapter,
+    options: {
+      scrolls?: number;
+      waitSelector?: string;
+      evaluateScript?: string;
+      waitAfterLoad?: number;
+    } = {},
+  ): Promise<string> {
+    const { scrolls = 0, waitSelector, evaluateScript, waitAfterLoad = 500 } = options;
+
+    // 等待选择器
+    if (waitSelector) {
+      try {
+        await (browser as any).lcm?.getPage()?.waitForSelector(waitSelector, { timeout: 8000 });
+      } catch {}
+    } else {
+      await new Promise((r) => setTimeout(r, waitAfterLoad));
+    }
+
+    // 滚动
+    for (let i = 0; i < scrolls; i++) {
+      await browser.executeScript(`window.scrollTo(0, ${200 + Math.floor(Math.random() * 600)})`).catch(() => {});
+      await new Promise((r) => setTimeout(r, 300 + Math.floor(Math.random() * 300)));
+    }
+
+    // 执行提取脚本
+    if (evaluateScript) {
+      return browser.executeScript<string>(evaluateScript).catch(() => "{}");
+    }
+    return "{}";
+  }
+
+  /**
+   * 策略链运行器。
+   * 按顺序尝试每个策略，第一个返回非 null 的 result 即停止。
+   * 用于百度学术 5 层策略链等场景。
+   */
+  protected async runStrategyChain<T>(
+    strategies: Array<{
+      name: string;
+      execute: () => Promise<T | null>;
+    }>,
+  ): Promise<{ data: T | null; source: string }> {
+    for (const s of strategies) {
+      try {
+        const result = await s.execute();
+        if (result !== null && result !== undefined) {
+          return { data: result, source: s.name };
+        }
+      } catch {}
+    }
+    return { data: null, source: "none" };
+  }
   private async quickCdpCheck(): Promise<boolean> {
     if (!FeatureFlags.enableChromeService) return false;
     const { get } = await import("http");

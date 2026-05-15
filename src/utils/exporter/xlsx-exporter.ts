@@ -21,12 +21,14 @@ function fmtCount(n: unknown): string {
 // ── Sheet builders per unit type ──
 
 function sheetBiliVideoInfo(data: any): XLSX.WorkSheet {
-  const d = data?.data || data;
-  const s = d?.stat || {};
-  const owner = d?.owner || {};
+  const d = data?.data || data || {};
+  // view/detail API 将字段嵌套在 .View 下，需要摊平
+  const src = (d.View && typeof d.View === "object" ? d.View : d);
+  const s = src?.stat || d?.stat || {};
+  const owner = src?.owner || d?.owner || {};
   const rows = [
     ["字段", "值"],
-    ["标题", d?.title || ""],
+    ["标题", src?.title || d?.title || ""],
     ["播放", fmtCount(s.view)],
     ["点赞", fmtCount(s.like)],
     ["投币", fmtCount(s.coin)],
@@ -34,10 +36,10 @@ function sheetBiliVideoInfo(data: any): XLSX.WorkSheet {
     ["转发", fmtCount(s.share)],
     ["UP主", owner?.name || ""],
     ["UP主ID", String(owner?.mid || "")],
-    ["分区", d?.tname || ""],
-    ["发布时间", fmtTime(d?.pubdate)],
-    ["时长", d?.duration ? `${Math.floor(d.duration / 60)}:${String(d.duration % 60).padStart(2, "0")}` : ""],
-    ["简介", snip(d?.desc || "")],
+    ["分区", src?.tname || d?.tname || ""],
+    ["发布时间", fmtTime(src?.pubdate || d?.pubdate)],
+    ["时长", (src?.duration || d?.duration) ? `${Math.floor((src?.duration || d?.duration) / 60)}:${String((src?.duration || d?.duration) % 60).padStart(2, "0")}` : ""],
+    ["简介", snip(src?.desc || d?.desc || "")],
   ];
   return XLSX.utils.aoa_to_sheet(rows);
 }

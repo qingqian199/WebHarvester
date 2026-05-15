@@ -4,6 +4,7 @@ import os from "os";
 import fs from "fs";
 import fetch from "node-fetch";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
+import { ConsoleNotifier } from "../utils/notifier";
 
 const DEFAULT_CHROME_PATHS = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -19,12 +20,20 @@ const DEFAULT_USER_DATA_DIR = path.join(os.tmpdir(), "webharvester-chrome-data")
 export class ChromeService {
   private proc: ChildProcess | null = null;
   private _ready = false;
+  private _degraded = false;
   private _port: number;
   private _chromePath: string;
   private _userDataDir: string;
   private _startTime = 0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private _restartCount = 0;
+  private consecutiveFailures = 0;
+  private readonly maxRestarts = 3;
+  private readonly heartbeatIntervalMs = 15000;
+  private readonly maxConsecutiveFailures = 2;
   private logger = new ConsoleLogger("info");
+  private notifier = new ConsoleNotifier();
 
   constructor(port = 9222, chromePath?: string, userDataDir?: string) {
     this._port = port;
@@ -34,7 +43,25 @@ export class ChromeService {
 
   get port(): number { return this._port; }
   get isReady(): boolean { return this._ready; }
+  get isDegraded(): boolean { return this._degraded; }
   get uptime(): number { return this._ready ? Date.now() - this._startTime : 0; }
+  get restartCount(): number { return this._restartCount; }
+
+  /** 返回详细的健康状态报告 */
+  getHealth(): { status: string; port: number; uptime: number; degraded: boolean; restartCount: number } {
+    return {
+      status: this._ready ? "ready" : this._degraded ? "degraded" : "stopped",
+      port: this._port,
+      uptime: this.uptime,
+      degraded: this._degraded,
+      restartCount: this._restartCount,
+    };
+  }
+
+  /** 返回是否健康可用于采集 */
+  isHealthy(): boolean {
+    return this._ready && !this._degraded;
+  }
 
   private detectChrome(): string {
     for (const p of DEFAULT_CHROME_PATHS) {
@@ -65,10 +92,10 @@ export class ChromeService {
     ], { stdio: "ignore", detached: false });
 
     this.proc.on("exit", (code) => {
-      this.logger.warn(`Chrome 进程异常退出 (code=${code})，将在 10s 后自动重启`);
+      this.logger.warn(`Chrome 进程退出 (code=${code})`);
       this._ready = false;
       this.proc = null;
-      setTimeout(() => this.start().catch(() => {}), 10000);
+      this.scheduleRestart();
     });
 
     this.proc.on("error", (err) => {
@@ -79,29 +106,89 @@ export class ChromeService {
     for (let i = 0; i < 30; i++) {
       if (await this.checkHealthFast()) {
         this._ready = true;
-        this.logger.info(`ChromeService 已就绪 (pid=${this.proc.pid}, port=${this._port})`);
+        this._degraded = false;
+        this.consecutiveFailures = 0;
+        this.logger.info(`ChromeService 已就绪 (pid=${this.proc?.pid}, port=${this._port})`);
+        await this.autoSyncCookies();
         break;
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
 
     if (!this._ready) {
-      this.logger.warn("ChromeService 启动超时，请检查 Chrome 是否可正常启动");
+      this.logger.warn("ChromeService 启动超时");
+      this.scheduleRestart();
     }
 
+    // 旧的健康检查（仅进程级）
     this.healthTimer = setInterval(async () => {
       const ok = await this.checkHealthFast();
       if (!ok && this._ready) {
-        this.logger.warn("Chrome 健康检查失败，标记为不可用");
+        this.logger.warn("Chrome 进程健康检查失败");
         this._ready = false;
       } else if (ok && !this._ready && this.proc) {
         this._ready = true;
+        this._degraded = false;
         this.logger.info("ChromeService 已自动恢复");
       }
     }, 10000);
-    if (typeof this.healthTimer === "object" && "unref" in this.healthTimer) {
-      this.healthTimer.unref();
+    if (typeof this.healthTimer === "object" && "unref" in this.healthTimer) (this.healthTimer as any).unref();
+
+    // 新的 CDP 心跳检测（连接级）
+    this.startHeartbeat();
+  }
+
+  /** CDP 心跳：每 15s 发送 Browser.getVersion，连续失败 2 次则重启 */
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) return;
+    this.heartbeatTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${this._port}/json/version`, { timeout: 5000 } as any);
+        if (res.status === 200) {
+          this.consecutiveFailures = 0;
+          if (!this._ready) {
+            this._ready = true;
+            this._degraded = false;
+            this.logger.info("CDP 连接已自动恢复");
+            await this.autoSyncCookies();
+          }
+          return;
+        }
+      } catch {}
+
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+        this.logger.warn(`CDP 心跳连续 ${this.consecutiveFailures} 次失败，触发重启`);
+        this._ready = false;
+        this.restart();
+      }
+    }, this.heartbeatIntervalMs);
+    if (typeof this.heartbeatTimer === "object" && "unref" in this.heartbeatTimer) (this.heartbeatTimer as any).unref();
+  }
+
+  /** 重启 Chrome。达到最大重启次数后标记 degraded */
+  private restart(): void {
+    this._restartCount++;
+    this.stop();
+    if (this._restartCount > this.maxRestarts) {
+      this._degraded = true;
+      this.notifier.sendAlert("error", "🔴 ChromeService 达到最大重启次数", `已重启 ${this._restartCount} 次，标记为 degraded，爬虫将降级到 Playwright Stealth 模式`);
+      return;
     }
+    this.notifier.sendAlert("warn", "🔄 ChromeService 自动重启", `第 ${this._restartCount}/${this.maxRestarts} 次`);
+    setTimeout(() => this.start().catch(() => {}), 10000);
+  }
+
+  private scheduleRestart(): void {
+    if (this._degraded) return;
+    this._restartCount++;
+    if (this._restartCount > this.maxRestarts) {
+      this._degraded = true;
+      this.notifier.sendAlert("error", "🔴 ChromeService 达到最大重启次数", `已重启 ${this._restartCount} 次，标记为 degraded`);
+      return;
+    }
+    this.logger.info(`ChromeService 将在 10s 后重启 (第 ${this._restartCount}/${this.maxRestarts} 次)`);
+    setTimeout(() => this.start().catch(() => {}), 10000);
   }
 
   async getWebSocketUrl(): Promise<string> {
@@ -117,17 +204,28 @@ export class ChromeService {
     return page.webSocketDebuggerUrl;
   }
 
-  getHealth(): { status: string; port: number; uptime: number } {
-    return { status: this._ready ? "ready" : "stopped", port: this._port, uptime: this.uptime };
-  }
-
   stop(): void {
     if (this.healthTimer) { clearInterval(this.healthTimer); this.healthTimer = null; }
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
     if (this.proc) {
       try { this.proc.kill("SIGTERM"); this.logger.info("ChromeService 已停止"); } catch {}
       this.proc = null;
     }
     this._ready = false;
+  }
+
+  private async autoSyncCookies(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const { CookieSyncService } = await import("./cookie-sync-service");
+      const svc = new CookieSyncService();
+      const synced = await svc.syncFromCDPToSessions();
+      if (synced.length > 0) {
+        this.logger.info(`ChromeService Cookie 同步完成: ${synced.join(", ")}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`Cookie 同步失败: ${e.message}`);
+    }
   }
 
   private async checkHealthFast(): Promise<boolean> {

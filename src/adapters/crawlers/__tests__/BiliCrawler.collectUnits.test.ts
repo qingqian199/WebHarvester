@@ -37,9 +37,9 @@ const pageFallback = () => mockPage({ title: "页面提取", content: "兜底数
 describe("BilibiliCrawler.collectUnits", () => {
   let crawler: BilibiliCrawler;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     crawler = new BilibiliCrawler();
-    crawler.setWbiKeys("test_img_key", "test_sub_key");
+    await crawler.setWbiKeys("test_img_key", "test_sub_key");
   });
 
   afterEach(() => {

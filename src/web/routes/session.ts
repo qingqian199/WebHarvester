@@ -2,6 +2,7 @@ import http from "http";
 import { Router } from "../Router";
 import { ServerContext } from "./context";
 import { AuthGuard } from "../../utils/auth-guard";
+import { CookieSyncService } from "../../services/cookie-sync-service";
 
 export function registerSessionRoutes(router: Router, ctx: ServerContext): void {
   router.register("POST", "/api/login", (req, res) => handleApiLogin(req, res, ctx));
@@ -11,6 +12,8 @@ export function registerSessionRoutes(router: Router, ctx: ServerContext): void 
   router.register("GET", "/api/profiles", (req, res) => handleApiProfiles(req, res, ctx));
   router.register("GET", "/api/sessions", (req, res) => handleApiSessions(req, res, ctx));
   router.register("DELETE", "/api/sessions/:name", (req, res, p) => handleApiDeleteSession(req, res, ctx, p));
+  router.register("POST", "/api/sessions/validate", (req, res) => handleApiValidateSession(req, res, ctx));
+  router.register("POST", "/api/sessions/sync-from-browser", (req, res) => handleApiSyncFromBrowser(req, res));
 }
 
 async function handleApiLogin(req: http.IncomingMessage, res: http.ServerResponse, ctx: ServerContext): Promise<void> {
@@ -183,4 +186,35 @@ async function handleApiDeleteSession(req: http.IncomingMessage, res: http.Serve
   await ctx.sessionManager.deleteProfile(name);
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ code: 0, msg: `已删除会话 ${name}` }));
+}
+
+async function handleApiValidateSession(req: http.IncomingMessage, res: http.ServerResponse, ctx: ServerContext): Promise<void> {
+  const body = await ctx.getBody(req);
+  let profile = "";
+  try { profile = JSON.parse(body).profile; } catch {}
+  if (!profile) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: -1, msg: "缺少 profile 参数" }));
+    return;
+  }
+  try {
+    const result = await ctx.sessionManager.validateSession(profile);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: result.valid ? 0 : -1, data: result }));
+  } catch (e: any) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: -1, msg: e.message }));
+  }
+}
+
+async function handleApiSyncFromBrowser(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  try {
+    const svc = new CookieSyncService();
+    const synced = await svc.syncFromCDPToSessions();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data: { synced, count: synced.length } }));
+  } catch (e: any) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: -1, msg: e.message }));
+  }
 }

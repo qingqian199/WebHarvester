@@ -1,6 +1,7 @@
 import { CrawlerSession, PageData } from "../../core/ports/ISiteCrawler";
 import { IProxyProvider } from "../../core/ports/IProxyProvider";
 import { buildSignedQuery } from "../../utils/crypto/bilibili-signer";
+import { WbiKeyManager } from "../../signer/wbi-key-manager";
 import { UnitResult } from "../../core/models/ContentUnit";
 import { BiliComments, BiliSearchResult, BiliUserVideos, BiliCommentItem } from "../../core/models/crawler-data";
 import { resolveBilibiliUrl } from "../../utils/url-resolver";
@@ -16,9 +17,6 @@ export interface BiliEndpointDef {
   params?: string;
   status?: "verified" | "sig_pending";
 }
-
-const DEFAULT_IMG_KEY = "7cd084941338484aae1ad9425b84077c";
-const DEFAULT_SUB_KEY = "4932caff0ff746eab6f01bf08b70ac45";
 
 export const BiliFallbackEndpoints: ReadonlyArray<{
   name: string; pageUrl: string; dataPath: string;
@@ -48,9 +46,9 @@ export class BilibiliCrawler extends BaseCrawler {
    * Bilibili 内容爬虫。
    *
    * ## API 签名
-   * - WBI 签名（w_rid + wts）：已验证通过，参考 HAR 捕获的 player/wbi/v2 和 view/detail 端点
+   * - WBI 签名（w_rid + wts）：通过 WbiKeyManager 从 nav 接口动态获取密钥
+   * - 密钥缓存到 sessions/wbi_keys.json，30 分钟 TTL
    * - 签名范围：请求 URL 的所有查询参数（含前端自动注入的 dm_img_* 追踪参数）
-   * - 弹幕分段 API（/x/v2/dm/wbi/web/seg.so）同样使用 WBI 签名
    *
    * ## CSRF 令牌
    * - GET 请求不需要 CSRF Token。如未来需 POST（如心跳/点击统计），
@@ -62,10 +60,23 @@ export class BilibiliCrawler extends BaseCrawler {
    */
   readonly name = "bilibili";
   readonly domain = BILI_DOMAIN;
-  private imgKey = DEFAULT_IMG_KEY;
-  private subKey = DEFAULT_SUB_KEY;
+  private wbiKeyManager: WbiKeyManager;
 
-  constructor(proxyProvider?: IProxyProvider) { super("bilibili", proxyProvider); this.registerHandlers(); }
+  constructor(proxyProvider?: IProxyProvider) {
+    super("bilibili", proxyProvider);
+    this.wbiKeyManager = new WbiKeyManager(this.logger);
+    this.registerHandlers();
+  }
+
+  /** 注入外部 WbiKeyManager（测试覆写用）。 */
+  setWbiKeyManager(mgr: WbiKeyManager): void {
+    this.wbiKeyManager = mgr;
+  }
+
+  /** @deprecated 使用 WbiKeyManager 自动管理密钥。保留以兼容测试。 */
+  async setWbiKeys(imgKey: string, subKey: string): Promise<void> {
+    await this.wbiKeyManager.setKeys(imgKey, subKey);
+  }
 
   private registerHandlers(): void {
     this.unitHandlers.set("bili_video_info", async (unit, params, session) => {
@@ -81,8 +92,8 @@ export class BilibiliCrawler extends BaseCrawler {
           responseTime = r.responseTime;
           if (d.code === 0) { data = d; }
           else if (d.code === -352) {
-            this.logger.warn("⚠️ B站 WBI 签名触发风控 -352，3秒后重试...");
-            await new Promise((r2) => setTimeout(r2, 3000));
+            this.logger.warn("⚠️ B站 WBI 签名 -352，强制刷新密钥并重试...");
+            await this.wbiKeyManager.refresh();
             const r2 = await this.fetchApi("视频详情(wbi)", { aid: params.aid }, session);
             const d2 = JSON.parse(r2.body) as Record<string, unknown>;
             responseTime += r2.responseTime;
@@ -121,9 +132,20 @@ export class BilibiliCrawler extends BaseCrawler {
       const detail = data.data as Record<string, unknown> | undefined;
       if (detail) {
         const enriched: Record<string, unknown> = { ...data };
-        // 标签: detail.View.tags 或 detail.tags
+        // 核心视频字段: detail.View 中提取到顶层
         if (detail.View && typeof detail.View === "object") {
           const view = detail.View as Record<string, unknown>;
+          // 基础信息
+          for (const field of ["bvid", "aid", "title", "desc", "pic", "tname", "tid", "videos", "duration", "pubdate", "ctime", "copyright", "mid", "mission_id", "dimension", "dynamic"]) {
+            if (view[field] !== undefined) enriched[field] = view[field];
+          }
+          // 嵌套对象
+          if (view.owner) enriched.owner = view.owner;
+          if (view.stat) enriched.stat = view.stat;
+          if (view.pages) enriched.pages = view.pages;
+          if (view.subtitle) enriched.subtitle = view.subtitle;
+          if (view.staff) enriched.staff = view.staff;
+          // 保持原有扩展字段提取
           if (view.tags) enriched.tags = view.tags;
           if (view.season_id) enriched.season_id = view.season_id;
           if (view.season) enriched.season = view.season;
@@ -185,8 +207,8 @@ export class BilibiliCrawler extends BaseCrawler {
         const r = await this.fetchApi("视频评论", { oid, next: String(nextCursor) }, session);
         const d: BiliComments = JSON.parse(r.body);
         if (d.code === -352) {
-          this.logger.warn("⚠️ B站评论签名 -352，3秒后重试...");
-          await new Promise((r2) => setTimeout(r2, 3000));
+          this.logger.warn("⚠️ B站评论签名 -352，强制刷新密钥并重试...");
+          await this.wbiKeyManager.refresh();
           const r2 = await this.fetchApi("视频评论", { oid, next: String(nextCursor) }, session);
           const d2: BiliComments = JSON.parse(r2.body);
           totalTime += r2.responseTime;
@@ -232,11 +254,6 @@ export class BilibiliCrawler extends BaseCrawler {
     });
   }
 
-  setWbiKeys(imgKey: string, subKey: string): void {
-    this.imgKey = imgKey;
-    this.subKey = subKey;
-  }
-
   matches(url: string): boolean {
     try { return new URL(url).hostname.includes(BILI_DOMAIN); } catch { return false; }
   }
@@ -270,7 +287,8 @@ export class BilibiliCrawler extends BaseCrawler {
         const [k, v] = pair.split("=");
         if (k) paramObj[k] = decodeURIComponent(v);
       });
-      query = buildSignedQuery(paramObj, this.imgKey, this.subKey);
+      const { img_key, sub_key } = await this.wbiKeyManager.getKeys();
+      query = buildSignedQuery(paramObj, img_key, sub_key);
     }
 
     const url = `https://${BILI_API_HOST}${ep.path}?${query}`;

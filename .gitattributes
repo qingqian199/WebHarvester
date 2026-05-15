@@ -1,0 +1,20 @@
+# 所有文件默认使用 LF，提交时转换为 LF，检出时不转换
+* text=auto eol=lf
+
+# 二进制文件不转换换行符
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
+*.dll binary
+*.exe binary
+
+# 代码/脚本文件强制 LF
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf

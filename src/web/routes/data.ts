@@ -8,6 +8,7 @@ import { formatUnitResult, formatUnitResults } from "../../utils/formatter";
 import { ResultAnalyzer } from "../../utils/analyzer";
 import { ArticleCaptureService } from "../../services/ArticleCaptureService";
 import { validateUrl } from "../../utils/url-validator";
+import { SqliteStorageAdapter } from "../../storage/sqlite-storage-adapter";
 import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS, TT_CONTENT_UNITS, BOSS_CONTENT_UNITS } from "../../core/models/ContentUnit";
 import { HarvestResult } from "../../core/models";
 
@@ -19,6 +20,7 @@ export function registerDataRoutes(router: Router, ctx: ServerContext): void {
   router.register("GET", "/api/results", (req, res) => handleApiResults(res));
   router.register("GET", "/api/results/:filename", (req, res, p) => handleApiResultDetail(req, res, ctx, p));
   router.register("GET", "/api/content-units", async (req, res) => handleApiContentUnits(req, res));
+  router.register("POST", "/api/history", (req, res) => handleApiQueryHistory(req, res));
 }
 
 async function handleApiAnalyze(req: http.IncomingMessage, res: http.ServerResponse, ctx: ServerContext): Promise<void> {
@@ -148,4 +150,38 @@ function handleApiContentUnits(req: http.IncomingMessage, res: http.ServerRespon
   const units = map[site] ?? [];
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ code: 0, data: units }));
+}
+
+async function handleApiQueryHistory(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const body = await new Promise<string>((resolve) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString()));
+  });
+  let filters: any = {};
+  try { filters = JSON.parse(body); } catch {}
+  try {
+    const sqlite = new SqliteStorageAdapter();
+    const results = sqlite.query({
+      domain: filters.domain,
+      taskName: filters.taskName,
+      timeStart: filters.timeStart,
+      timeEnd: filters.timeEnd,
+      limit: filters.limit ?? 20,
+      offset: filters.offset ?? 0,
+    });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: 0, data: results.map((r) => ({
+      traceId: r.trace_id,
+      domain: r.domain,
+      taskName: r.task_name,
+      createdAt: r.created_at,
+      targetUrl: r.data?.targetUrl ?? r.data?.url ?? "",
+      requestCount: r.data?.networkRequests?.length ?? 0,
+      hostname: r.data?.targetUrl ? new URL(r.data.targetUrl).hostname : "",
+    })) }));
+  } catch (e: any) {
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ code: -1, msg: e.message }));
+  }
 }

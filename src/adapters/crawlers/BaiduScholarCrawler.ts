@@ -3,8 +3,16 @@ import { IProxyProvider } from "../../core/ports/IProxyProvider";
 import { UnitResult } from "../../core/models/ContentUnit";
 import { BaseCrawler } from "./BaseCrawler";
 import { PlaywrightAdapter } from "../PlaywrightAdapter";
+import { BrowserLifecycleManager } from "../BrowserLifecycleManager";
+import { injectAntiDetection } from "../../browser/anti-detection-injector";
+import { waitForUserAction, detection } from "../../browser/user-action-waiter";
+import { humanBehaviorSession } from "../../browser/human-behavior-simulator";
+import { DEFAULT_PAPER_STRATEGIES } from "../../strategies/baidu-scholar-strategies";
+import fs from "fs/promises";
+import path from "path";
 
 const SCHOLAR_DOMAIN = "xueshu.baidu.com";
+const CAPTCHA_SCREENSHOT_DIR = "captcha_screenshots";
 
 /** 从搜索 API 的 paperList 中提取纸面字段。 */
 function extractPaperBasic(p: any): Record<string, any> {
@@ -52,12 +60,67 @@ function extractPaperBasic(p: any): Record<string, any> {
   };
 }
 
-/** 从 detail 页检查是否有 CAPTCHA */
-async function checkCaptcha(browser: PlaywrightAdapter): Promise<boolean> {
+/** 从 detail 页检查是否有 CAPTCHA，如有则截图并提示。返回 true 表示被拦截。 */
+async function checkCaptcha(browser: PlaywrightAdapter, pid?: string, logger?: any): Promise<boolean> {
   try {
     const title = await browser.executeScript<string>("document.title").catch(() => "") as unknown as string;
-    return title.includes("百度安全验证") || title.includes("安全验证");
+    const isCaptcha = title.includes("百度安全验证") || title.includes("安全验证");
+    if (isCaptcha) {
+      // 截图保存
+      try {
+        const dir = path.resolve(CAPTCHA_SCREENSHOT_DIR);
+        await fs.mkdir(dir, { recursive: true });
+        const b = (browser as any).lcm as BrowserLifecycleManager | undefined;
+        const page = b?.getPage?.();
+        if (page) {
+          const filename = `baidu_captcha_${pid || Date.now()}_${Date.now()}.png`;
+          await page.screenshot({ path: path.join(dir, filename), fullPage: false });
+          logger?.warn(`  验证码截图已保存: ${dir}/${filename}`);
+        }
+      } catch {}
+      logger?.warn("  ⛔ 百度安全验证拦截，请手动打开详情页完成验证后按回车继续");
+      logger?.warn("  💡 建议: 使用非 headless 模式 (headless: false) 可大幅降低触发概率");
+    }
+    return isCaptcha;
   } catch { return false; }
+}
+
+/**
+ * 创建具有反检测能力的浏览器页面。
+ * 降级链：headless=false（可视模式）→ headless=true（隐身模式）
+ * 添加额外启动参数和初始化脚本以绕过 BIOS 检测。
+ */
+async function createStealthPage(
+  url: string,
+  logger: any,
+): Promise<{ browser: PlaywrightAdapter; page: any } | null> {
+  // CI/测试环境跳过 headless=false（避免启动可视窗口）
+  const modes = process.env.CI ? [true] : [false, true];
+  for (const headless of modes) {
+    try {
+      const lcm = new BrowserLifecycleManager(logger);
+      const page = await (lcm as any).launch(
+        url,
+        headless,
+        undefined,
+        "domcontentloaded",
+        headless ? 20000 : 5000,
+      );
+
+      await injectAntiDetection(page);
+
+      const adapter = new PlaywrightAdapter(logger);
+      (adapter as any).lcm = lcm;
+      (adapter as any).lcm.page = page;
+      (adapter as any).lcm.pooled = false;
+
+      logger.info(`  浏览器启动成功 (${headless ? "headless" : "可视模式"})`);
+      return { browser: adapter, page };
+    } catch (e) {
+      logger.info(`  浏览器启动失败 (headless=${headless}): ${(e as Error).message}`);
+    }
+  }
+  return null;
 }
 
 export class BaiduScholarCrawler extends BaseCrawler {
@@ -129,150 +192,217 @@ export class BaiduScholarCrawler extends BaseCrawler {
 
       const maxDetails = Math.min(parseInt(params.max_details || "10"), 50);
       const targets = papers.slice(0, maxDetails);
-      const enriched: Record<string, any>[] = [];
       const startTime = Date.now();
-      let cdpAttempted = false;
       let usedCDP = false;
 
-      for (let i = 0; i < targets.length; i++) {
-        const pid = targets[i]._paperId || targets[i].paperId || "";
-        if (!pid) continue;
+      // ── 前置：CDP 浏览器只连接一次 ──
+      let cdpContext: any = null;
+      try {
+        const { getBrowser: getProviderBrowser } = await import("../../services/BrowserProvider");
+        const inst = await getProviderBrowser("__cdp__", true);
+        if (inst.isCDP && inst.context) {
+          cdpContext = inst.context;
+          usedCDP = true;
+          const { setMaxPagesPerBrowser } = await import("../../utils/BrowserPool");
+          setMaxPagesPerBrowser("__cdp__", Math.min(targets.length, 3));
+          this.logger.info(`  CDP 浏览器已就绪，并发 ${Math.min(targets.length, 3)} 页`);
+        }
+      } catch (e: any) {
+        this.logger.warn(`  CDP 连接失败: ${e.message}`);
+      }
 
-        let browser: PlaywrightAdapter | null = null;
-        let isCDP = false;
+      // ── 提取单篇论文详情的函数 ──
+      const extractPaper = async (target: Record<string, any>, idx: number): Promise<Record<string, any>> => {
+        const pid = target._paperId || target.paperId || "";
 
-        try {
-          // ── 获取浏览器实例（CDP 优先） ──
-          if (!cdpAttempted) {
-            try {
-              const { getBrowser: getProviderBrowser } = await import("../../services/BrowserProvider");
-              const inst = await getProviderBrowser("__cdp__", true);
-              if (inst.isCDP && inst.context) {
-                const adapter = new PlaywrightAdapter(this.logger);
-                // 设置 API 响应拦截器（在页面加载前注册，但需要先有 page）
-                const rawCtx = inst.context;
-                const rawPage = await rawCtx.newPage();
-                const apiResponses: Record<string, any>[] = [];
-                rawPage.on("response", async (res: any) => {
-                  const url = res.url();
-                  if (url.includes("/api/") || url.includes("/data/")) {
-                    try {
-                      const text = await res.text();
-                      if (text.startsWith("{") && (text.includes("paperId") || text.includes("title") || text.length > 500)) {
-                        apiResponses.push({ url: url.split("?")[0], data: JSON.parse(text) });
-                      }
-                    } catch {}
+        // CDP 模式：从页面池获取 Page
+        if (cdpContext) {
+          const { acquirePage, releasePage } = await import("../../utils/BrowserPool");
+          let rawPage: any = null;
+          try {
+            rawPage = await acquirePage("__cdp__");
+            const apiResponses: Record<string, any>[] = [];
+            rawPage.on("response", async (res: any) => {
+              const url = res.url();
+              if (url.includes("/api/") || url.includes("/data/")) {
+                try {
+                  const text = await res.text();
+                  if (text.startsWith("{") && (text.includes("paperId") || text.includes("title") || text.length > 500)) {
+                    apiResponses.push({ url: url.split("?")[0], data: JSON.parse(text) });
                   }
-                });
-                await rawPage.goto(`https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`, { waitUntil: "domcontentloaded", timeout: 20000 });
-                await new Promise((r) => setTimeout(r, 3000));
-                // 注入 page 到 LCM
-                const lcm = (adapter as any).lcm;
-                lcm.page = rawPage;
-                lcm.context = rawCtx;
-                lcm.pooled = true;
-                browser = adapter;
-                isCDP = true;
-                usedCDP = true;
-                cdpAttempted = true;
-                this.logger.info(`  详情 ${i + 1}/${targets.length}: 使用 CDP`);
-
-                // 策略 A: 从拦截的 API 响应中提取
-                let detailFound = false;
-                for (const ar of apiResponses) {
-                  const detail = tryExtractPaperDetailFromAny(ar.data);
-                  if (detail) {
-                    enriched.push({ ...targets[i], ...detail, _detailStatus: "ok", _detailSource: `api:${ar.url}` });
-                    this.logger.info(`  详情 ${i + 1}/${targets.length}: ${(targets[i].标题 || pid).slice(0, 30)} (API: ${ar.url.slice(0, 60)})`);
-                    detailFound = true;
-                    break;
-                  }
-                }
-                if (detailFound) continue;
+                } catch {}
               }
-            } catch (e: any) {
-              this.logger.warn(`  CDP 连接失败: ${e.message}, 回退到 headless`);
+            });
+            await rawPage.goto(`https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`, { waitUntil: "domcontentloaded", timeout: 20000 });
+            await new Promise((r) => setTimeout(r, 2000 + Math.floor(Math.random() * 1000)));
+
+            // ── 真人行为模拟（在数据提取之前） ──
+            const behaviorIntensity = (process.env.WH_BEHAVIOR_INTENSITY || "medium") as "light" | "medium" | "heavy" | "off";
+            if (behaviorIntensity !== "off") {
+              this.logger.debug(`  详情 ${idx + 1}: 执行行为模拟 (${behaviorIntensity})`);
+              await humanBehaviorSession(rawPage, behaviorIntensity);
+            }
+
+            // 策略 A: API 响应拦截
+            for (const ar of apiResponses) {
+              const detail = tryExtractPaperDetailFromAny(ar.data);
+              if (detail) {
+                await releasePage(rawPage, "__cdp__");
+                return { ...target, ...detail, _detailStatus: "ok", _detailSource: `api:${ar.url}` };
+              }
+            }
+
+            // 策略 B: CAPTCHA 检查 → 等待用户手动处理
+            const title = await rawPage.evaluate(() => document.title).catch(() => "");
+            if (title.includes("百度安全验证") || title.includes("安全验证")) {
+              try {
+                const { default: p } = await import("path");
+                const dir = p.resolve("captcha_screenshots");
+                await fs.mkdir(dir, { recursive: true });
+                await rawPage.screenshot({ path: p.join(dir, `baidu_captcha_${pid}_${Date.now()}.png`), fullPage: false });
+              } catch {}
+
+              this.logger.warn(`  详情 ${idx + 1}: ⛔ 百度安全验证拦截，等待用户手动验证...`);
+
+              // 释放并发槽位，等待用户操作
+              const { markPageWaiting, markPageActive } = await import("../../utils/BrowserPool");
+              markPageWaiting(rawPage, "__cdp__");
+
+              const startWait = Date.now();
+              try {
+                await waitForUserAction({
+                  timeout: 300000,
+                  condition: detection.captchaGone(rawPage),
+                  message: `百度学术验证码 (${pid.slice(0, 16)})，请在 Chrome 窗口中完成验证，完成后将自动继续采集论文详情`,
+                });
+                this.logger.info(`  详情 ${idx + 1}: ✅ 验证码已通过 (等待 ${((Date.now() - startWait) / 1000).toFixed(0)}s)`);
+                markPageActive(rawPage, "__cdp__");
+                // 重新检查标题
+                const newTitle = await rawPage.evaluate(() => document.title).catch(() => "");
+                if (newTitle.includes("百度安全验证") || newTitle.includes("安全验证")) {
+                  await releasePage(rawPage, "__cdp__");
+                  return { ...target, _detailStatus: "captcha" };
+                }
+              } catch (e) {
+                this.logger.warn(`  详情 ${idx + 1}: ⛔ 验证码等待超时 (${((Date.now() - startWait) / 1000).toFixed(0)}s)`);
+                markPageActive(rawPage, "__cdp__");
+                await releasePage(rawPage, "__cdp__");
+                return { ...target, _detailStatus: "captcha", _detailError: e instanceof Error ? e.message : "等待超时" };
+              }
+            }
+
+            // 策略链: SSR → Inline Script → JSON-LD → DOM
+            const adapter = new PlaywrightAdapter(this.logger);
+            (adapter as any).lcm.page = rawPage;
+            (adapter as any).lcm.context = cdpContext;
+
+            const { data: detail, source } = await this.runStrategyChain(
+              DEFAULT_PAPER_STRATEGIES.map((strategy) => ({
+                name: strategy.name,
+                execute: () => strategy.execute(adapter, pid),
+              })),
+            );
+
+            if (detail) {
+              await releasePage(rawPage, "__cdp__");
+              return { ...target, ...detail, _detailStatus: detail._hasRealData ? "ok" : "partial", _detailSource: source };
+            }
+
+            await releasePage(rawPage, "__cdp__");
+            return { ...target, _detailStatus: "no_data" };
+          } catch (e: any) {
+            if (rawPage) { await releasePage(rawPage, "__cdp__").catch(() => {}); }
+            // 页面池死锁：不返回错误，降级到 Stealth 模式继续
+            const { PoolDeadlockError } = await import("../../utils/BrowserPool");
+            if (e instanceof PoolDeadlockError) {
+              this.logger.warn(`  ⚠️ 详情 ${idx + 1}: 页面池死锁，降级到无头浏览器模式处理 (${pid.slice(0, 16)}...)`);
+            } else {
+              return { ...target, _detailStatus: "error", _detailError: e.message };
             }
           }
+        }
 
-          // ── CDP 不可用 → headless ──
+        // ── 非 CDP 模式：stealth 浏览器 → fetchPageContent ──
+        let browser: PlaywrightAdapter | null = null;
+        try {
+          if (!process.env.JEST_WORKER_ID) {
+            const stealth = await createStealthPage(
+              `https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`,
+              this.logger,
+            );
+            if (stealth) browser = stealth.browser;
+          }
           if (!browser) {
             const result = await this.fetchPageContent(
               `https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`,
-              session, ".xueshu.baidu.com"
+              session, ".xueshu.baidu.com",
             );
             browser = result.browser;
           }
 
-          // ── 策略 B: 检查 CAPTCHA ──
-          const isCaptcha = await checkCaptcha(browser!);
-          if (isCaptcha) {
-            this.logger.warn(`  详情 ${i + 1}/${targets.length} ${pid.slice(0, 16)}: 百度安全验证拦截`);
-            enriched.push({ ...targets[i], _detailStatus: "captcha" });
-            continue;
-          }
+          const isCaptcha = await checkCaptcha(browser!, pid, this.logger);
+          if (isCaptcha) return { ...target, _detailStatus: "captcha" };
 
-          // ── 策略 F: SSR 数据提取（__INITIAL_STATE__ / __NEXT_DATA__ / __NUXT_DATA__） ──
           const ssrResult = await this.extractSSRData(browser!, "scholar_paper_detail");
           if (ssrResult.body) {
-            let ssrParsed: any;
-            try { ssrParsed = JSON.parse(ssrResult.body); } catch {}
-            if (ssrParsed && (ssrParsed._hasInitState || ssrParsed._hasNextData || ssrParsed._hasNuxtData)) {
-              const dataSource = ssrParsed.data || ssrParsed.nextData?.props?.pageProps || ssrParsed.nuxtData;
-              const detail = tryExtractPaperDetailFromAny(dataSource || ssrParsed);
-              if (detail) {
-                enriched.push({ ...targets[i], ...detail, _detailStatus: "ok", _detailSource: "ssr" });
-                this.logger.info(`  详情 ${i + 1}/${targets.length}: ${(targets[i].标题 || pid).slice(0, 30)} (SSR)`);
-                continue;
-              }
+            let sp: any; try { sp = JSON.parse(ssrResult.body); } catch {}
+            if (sp && (sp._hasInitState || sp._hasNextData || sp._hasNuxtData)) {
+              const ds = sp.data || sp.nextData?.props?.pageProps || sp.nuxtData;
+              const detail = tryExtractPaperDetailFromAny(ds || sp);
+              if (detail) return { ...target, ...detail, _detailStatus: "ok", _detailSource: "ssr" };
             }
           }
 
-          // ── 策略 C: 扫描所有 inline script 标签 ──
-          const scriptData = await scanAllScriptsForPaperData(browser!);
-          if (scriptData && scriptData.paperId) {
-            const detail = tryExtractPaperDetailFromAny(scriptData);
-            enriched.push({ ...targets[i], ...(detail || {}), _detailStatus: "ok", _detailSource: "inline_script" });
-            this.logger.info(`  详情 ${i + 1}/${targets.length}: ${(targets[i].标题 || pid).slice(0, 30)} (inline script)`);
-            continue;
+          const sd = await scanAllScriptsForPaperData(browser!);
+          if (sd && sd.paperId) {
+            const detail = tryExtractPaperDetailFromAny(sd);
+            return { ...target, ...(detail || {}), _detailStatus: "ok", _detailSource: "inline_script" };
           }
 
-          // ── 策略 D: JSON-LD ──
-          const jsonld = await checkJSONLD(browser!);
-          if (jsonld && (jsonld.name || jsonld.description)) {
+          const jd = await checkJSONLD(browser!);
+          if (jd && (jd.name || jd.description)) {
             const mapped: Record<string, string> = {};
-            if (jsonld.name) mapped.标题 = jsonld.name;
-            if (jsonld.description) mapped.摘要 = jsonld.description;
-            if (jsonld.datePublished) mapped.发表年份 = jsonld.datePublished.slice(0, 4);
-            if (jsonld.author) mapped.作者 = Array.isArray(jsonld.author) ? jsonld.author.map((a: any) => a.name || "").filter(Boolean).join("; ") : jsonld.author.name || "";
-            enriched.push({ ...targets[i], ...mapped, _detailStatus: "partial", _detailSource: "jsonld" });
-            this.logger.info(`  详情 ${i + 1}/${targets.length}: ${(targets[i].标题 || pid).slice(0, 30)} (JSON-LD)`);
-            continue;
+            if (jd.name) mapped.标题 = jd.name;
+            if (jd.description) mapped.摘要 = jd.description;
+            if (jd.datePublished) mapped.发表年份 = jd.datePublished.slice(0, 4);
+            if (jd.author) mapped.作者 = Array.isArray(jd.author) ? jd.author.map((a: any) => a.name || "").filter(Boolean).join("; ") : jd.author.name || "";
+            return { ...target, ...mapped, _detailStatus: "partial", _detailSource: "jsonld" };
           }
 
-          // ── 策略 E: DOM 文本提取 ──
-          const domDetail = await extractDOMDetail(browser!);
-          if (domDetail && Object.keys(domDetail).length > 0) {
-            enriched.push({ ...targets[i], ...domDetail, _detailStatus: domDetail._hasRealData ? "ok" : "partial", _detailSource: "dom" });
-            this.logger.info(`  详情 ${i + 1}/${targets.length}: ${(targets[i].标题 || pid).slice(0, 30)} (DOM)`);
-            continue;
+          const dd = await extractDOMDetail(browser!);
+          if (dd && Object.keys(dd).length > 0) {
+            return { ...target, ...dd, _detailStatus: dd._hasRealData ? "ok" : "partial", _detailSource: "dom" };
           }
 
-          // ── 所有策略失败 ──
-          this.logger.warn(`  详情 ${i + 1}/${targets.length} ${pid.slice(0, 16)}: 页面无可用数据`);
-          enriched.push({ ...targets[i], _detailStatus: "no_data" });
-
+          return { ...target, _detailStatus: "no_data" };
         } catch (e: any) {
-          this.logger.warn(`  详情 ${i + 1}/${targets.length} ${pid.slice(0, 16)}: ${e.message}`);
-          enriched.push({ ...targets[i], _detailStatus: "error", _detailError: e.message });
+          return { ...target, _detailStatus: "error", _detailError: e.message };
         } finally {
-          if (browser) {
-            if (isCDP) {
-              try { const p = (browser as any).lcm?.page; if (p) await p.close().catch(() => {}); } catch {}
-            } else {
-              await (browser as any).close().catch(() => {});
-            }
-          }
+          if (browser) await (browser as any).close().catch(() => {});
+        }
+      };
+
+      // ── 执行：CDP 并发 / 非 CDP 串行 ──
+      const concurrency = cdpContext ? Math.min(targets.length, 3) : 1;
+      const enriched: Record<string, any>[] = [];
+
+      if (concurrency > 1) {
+        // CDP 并发执行
+        const results = await this.runWithConcurrency(
+          targets.map((t, i) => ({ target: t, idx: i })),
+          concurrency,
+          async ({ target, idx }) => {
+            await new Promise((r) => setTimeout(r, idx * 200)); // 错峰
+            return extractPaper(target, idx);
+          },
+        );
+        enriched.push(...results);
+      } else {
+        // 串行（非 CDP 或单篇）
+        for (let i = 0; i < targets.length; i++) {
+          this.logger.info(`  详情 ${i + 1}/${targets.length}: 处理中...`);
+          const result = await extractPaper(targets[i], i);
+          enriched.push(result);
         }
       }
 

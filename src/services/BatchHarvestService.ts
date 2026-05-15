@@ -3,6 +3,8 @@ import { HarvesterService } from "../core/services/HarvesterService";
 import { BatchTaskItem } from "../core/config/app-config";
 import { PlaywrightAdapter } from "../adapters/PlaywrightAdapter";
 import { FileStorageAdapter } from "../adapters/FileStorageAdapter";
+import { SqliteStorageAdapter } from "../storage/sqlite-storage-adapter";
+import { CompositeStorageAdapter } from "../storage/composite-storage-adapter";
 import { randomDelay } from "../utils/human-behavior";
 import { BROWSER_MASK_CONFIG } from "../core/config";
 
@@ -57,7 +59,10 @@ export class BatchHarvestService {
         await this.runItemOverride(task, idx, total);
       } else {
         const browser = new PlaywrightAdapter(this.logger);
-        const storage = new FileStorageAdapter(this.outputDir);
+        const storage = new CompositeStorageAdapter([
+          new FileStorageAdapter(this.outputDir),
+          new SqliteStorageAdapter(),
+        ]);
         const svc = new HarvesterService(this.logger, browser, storage);
         await svc.harvest({
           targetUrl: task.targetUrl,

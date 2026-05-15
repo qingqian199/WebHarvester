@@ -1,8 +1,7 @@
 import { Page, BrowserContext } from "playwright";
 import { BrowserLifecycleManager } from "../adapters/BrowserLifecycleManager";
-import { FileSessionManager } from "../adapters/FileSessionManager";
 import { ILogger } from "../core/ports/ILogger";
-import { SessionState } from "../core/ports/ISessionManager";
+import { ISessionManager, SessionState } from "../core/ports/ISessionManager";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { captureSessionFromPage } from "./session-helper";
 import {
@@ -42,7 +41,7 @@ export class AuthGuard {
   private logger: ILogger;
 
   constructor(
-    private sessionManager: FileSessionManager,
+    private sessionManager: ISessionManager,
     private authConfig: AuthConfig = {},
     logger?: ILogger,
   ) {

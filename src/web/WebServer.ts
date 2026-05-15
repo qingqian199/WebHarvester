@@ -21,6 +21,8 @@ import { registerSessionRoutes } from "./routes/session";
 import { registerDataRoutes } from "./routes/data";
 import { registerSystemRoutes } from "./routes/system";
 import { registerMcpRoutes } from "./routes/mcp";
+import { registerBrowserRoutes } from "./routes/browser";
+import { ConsoleNotifier, SessionExpiredError, RecoverableError } from "../utils/notifier";
 
 const CONFIG_PATH = path.resolve("./config.json");
 
@@ -118,6 +120,7 @@ export class WebServer {
     registerDataRoutes(this.router, ctx);
     registerSystemRoutes(this.router, ctx);
     registerMcpRoutes(this.router, ctx);
+    registerBrowserRoutes(this.router, ctx);
   }
 
   getClientIp(req: http.IncomingMessage): string {
@@ -199,18 +202,40 @@ export class WebServer {
 
   enableTaskQueue(maxConcurrency = 2): ITaskQueue {
     const queue = new PQueueTaskQueue(maxConcurrency);
+    const notifier = new ConsoleNotifier();
     queue.setProcessor(async (task: HarvestTask) => {
-      const session = task.sessionName ? await this.sessionManager.load(task.sessionName) : null;
-      const crawlerMap: Record<string, any> = {
-        xiaohongshu: new XhsCrawler(),
-        zhihu: new ZhihuCrawler(),
-        bilibili: new BilibiliCrawler(),
-        tiktok: new TikTokCrawler(),
-      };
-      const crawler = crawlerMap[task.site] ?? null;
-      if (!crawler) throw new Error(`未知站点: ${task.site}`);
-      const sessionData = session ? { cookies: session.cookies, localStorage: session.localStorage } : undefined;
-      return crawler.collectUnits(task.units || [], task.params || {}, sessionData, task.authMode);
+      // 会话有效性检查
+      if (task.sessionName) {
+        const { valid, detail } = await this.sessionManager.validateSession(task.sessionName);
+        if (!valid) {
+          notifier.sendAlert("error", `⛔ 会话过期: ${task.sessionName}`, detail || "无详情");
+          throw new SessionExpiredError(task.sessionName, detail);
+        }
+      }
+
+      const maxRetries = 2;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const session = task.sessionName ? await this.sessionManager.load(task.sessionName) : null;
+          const crawlerMap: Record<string, any> = {
+            xiaohongshu: new XhsCrawler(),
+            zhihu: new ZhihuCrawler(),
+            bilibili: new BilibiliCrawler(),
+            tiktok: new TikTokCrawler(),
+          };
+          const crawler = crawlerMap[task.site] ?? null;
+          if (!crawler) throw new Error(`未知站点: ${task.site}`);
+          const sessionData = session ? { cookies: session.cookies, localStorage: session.localStorage } : undefined;
+          return await crawler.collectUnits(task.units || [], task.params || {}, sessionData, task.authMode);
+        } catch (e) {
+          if (e instanceof RecoverableError && attempt < maxRetries) {
+            notifier.sendAlert("warn", `🔄 任务重试 ${attempt + 1}/${maxRetries}`, `${task.site}/${task.id}: ${e.message}`);
+            await new Promise((r) => setTimeout(r, e.retryDelayMs));
+            continue;
+          }
+          throw e;
+        }
+      }
     });
     this.taskQueue = queue;
     return queue;
