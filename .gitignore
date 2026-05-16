@@ -10,3 +10,5 @@ benchmark/results/
 .env
 .DS_Store
 Thumbs.db
+config.json
+captcha_screenshots/
