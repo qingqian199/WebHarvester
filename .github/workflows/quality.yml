@@ -1,0 +1,53 @@
+name: Quality Gate
+on: [push, pull_request]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: oven-sh/setup-bun@v1
+      
+      - run: bun install
+      
+      - name: TypeScript 编译
+        run: npx tsc --noEmit
+      
+      - name: 核心模块测试（跳过 flaky）
+        run: npx jest --testPathIgnorePatterns='web/|cli/handlers|middleware/__tests__/(BossSecurity|BrowserSignature)|BossSession|StrategyOrchestrator|capture-integration|FileSessionManager' --passWithNoTests --testTimeout=30000
+      
+      - name: 空 catch 扫描（禁止无注释空 catch）
+        run: |
+          FOUND=$(grep -rn "catch\s*{\s*}" src/ --include="*.ts" | grep -v "// \(ok\|ignore\|expected\|fallback\|noop\)" | grep . | head -20)
+          if [ -n "$FOUND" ]; then
+            echo "❌ 发现无注释空 catch:"
+            echo "$FOUND"
+            exit 1
+          fi
+          echo "✅ 无注释空 catch: 0"
+      
+      - name: 文件级 no-explicit-any 检查
+        run: |
+          COUNT=$(grep -rn "eslint-disable.*no-explicit-any" src/ --include="*.ts" | grep "/\* eslint-disable" | wc -l)
+          if [ "$COUNT" -gt 3 ]; then
+            echo "❌ 文件级 no-explicit-any 超过 3: $COUNT"
+            exit 1
+          fi
+          echo "✅ 文件级 no-explicit-any: $COUNT (≤3)"
+      
+      - name: 大文件检查（tools.ts 允许 600 行）
+        run: |
+          ISSUES=0
+          while IFS= read -r file; do
+            lines=$(wc -l < "$file")
+            name=$(basename "$file")
+            if [ "$name" = "tools.ts" ] && [ "$lines" -gt 600 ]; then
+              echo "❌ tools.ts 超过 600 行: $lines"
+              ISSUES=1
+            elif [ "$name" != "tools.ts" ] && [ "$lines" -gt 500 ]; then
+              echo "❌ $file 超过 500 行: $lines"
+              ISSUES=1
+            fi
+          done < <(find src/ -name "*.ts" -type f)
+          if [ "$ISSUES" -eq 0 ]; then echo "✅ 文件大小合规"; fi

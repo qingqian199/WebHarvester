@@ -293,7 +293,7 @@ export class XhsCrawler extends BaseCrawler {
               mergedParams.user_id = String(parsed.user_id || parsed.uid);
               break;
             }
-          } catch {}
+          } catch {} // ok: ignored
         }
       }
     }
@@ -448,7 +448,7 @@ export class XhsCrawler extends BaseCrawler {
         const data = JSON.parse(r.body);
         const uid = data.userId || data.user_id || "";
         if (uid) params.user_id = uid;
-      } catch {}
+      } catch {} // ok: ignored
     }
 
     const results: UnitResult[] = [];

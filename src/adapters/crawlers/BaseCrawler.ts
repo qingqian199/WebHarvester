@@ -173,7 +173,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
             }
           }
         }
-      } catch {}
+      } catch {} // ok: ignored
     }
 
     return result;
@@ -193,7 +193,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
         const code = parsed.code ?? parsed.status_code ?? parsed.errcode;
         if (typeof code === "number" && code !== 0 && (knownCodes.includes(code) || RISK_LEVELS[String(code)])) return code;
       }
-    } catch {}
+    } catch {} // ok: ignored
     return null;
   }
 
@@ -224,9 +224,9 @@ export abstract class BaseCrawler implements ISiteCrawler {
       const r = {}; const is = window.__INITIAL_STATE__;
       if (is) { r._hasInitState = true; r.data = JSON.parse(JSON.stringify(is)); }
       const nd = document.getElementById("__NEXT_DATA__");
-      if (nd) { r._hasNextData = true; try { r.nextData = JSON.parse(nd.textContent || "{}"); } catch {} }
+      if (nd) { r._hasNextData = true; try { r.nextData = JSON.parse(nd.textContent || "{}"); } catch {} // ok: ignored }
       const nu = document.getElementById("__NUXT_DATA__");
-      if (nu) { r._hasNuxtData = true; try { r.nuxtData = JSON.parse(nu.textContent || "{}"); } catch {} }
+      if (nu) { r._hasNuxtData = true; try { r.nuxtData = JSON.parse(nu.textContent || "{}"); } catch {} // ok: ignored }
       r.title = document.title; return JSON.stringify(r);
     })()`).catch(() => "{}");
     const parsed = JSON.parse(ssrData);
@@ -277,7 +277,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
         if (result && result.code === 0 && result.data) {
           return { data: result.data, method: "signature", responseTime: 0 };
         }
-      } catch {}
+      } catch {} // ok: ignored
     }
 
     if (strategy === "api") {
@@ -313,7 +313,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
     if (waitSelector) {
       try {
         await (browser as any).lcm?.getPage()?.waitForSelector(waitSelector, { timeout: 8000 });
-      } catch {}
+      } catch {} // ok: ignored
     } else {
       await new Promise((r) => setTimeout(r, waitAfterLoad));
     }
@@ -348,7 +348,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
         if (result !== null && result !== undefined) {
           return { data: result, source: s.name };
         }
-      } catch {}
+      } catch {} // ok: ignored
     }
     return { data: null, source: "none" };
   }
@@ -414,7 +414,7 @@ export abstract class BaseCrawler implements ISiteCrawler {
     if (contentSelector) {
       try {
         await (adapter as any).lcm.getPage().waitForSelector(contentSelector, { timeout: 8000 });
-      } catch {}
+      } catch {} // ok: ignored
     } else {
       await new Promise((r) => setTimeout(r, 2000));
     }

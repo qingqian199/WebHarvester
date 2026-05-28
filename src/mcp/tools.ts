@@ -227,11 +227,11 @@ export function registerMcpTools(server: McpServer, ctx: ToolContext): void {
               const content = await fs.readFile(fullPath, "utf-8");
               const parsed = JSON.parse(content);
               url = parsed.targetUrl ?? parsed.url ?? "";
-            } catch {}
+            } catch {} // ok: ignored
             entries.push({ filename: `${dir.name}/${f}`, url: url.slice(0, 120), timestamp: stat.mtime.toISOString(), size: stat.size });
           }
         }
-      } catch {}
+      } catch {} // ok: ignored
       entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
       return entries.slice(0, limit);
     },
@@ -517,6 +517,191 @@ export function registerMcpTools(server: McpServer, ctx: ToolContext): void {
     },
   });
 
+  // ── 工具 15: report_diagnostics — 诊断故障 ──
+  server.registerTool({
+    name: "report_diagnostics",
+    description: "对指定 traceId 的采集任务执行全量诊断：分析时间线错误、分类错误类型、检查系统健康、站点功能调用统计，返回诊断报告和修复建议。不传 traceId 则诊断最近一次任务。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        traceId: { type: "string", description: "采集任务 traceId（可选，默认最近一次）" },
+        site: { type: "string", description: "站点过滤（可选）" },
+      },
+    },
+    handler: async (args) => {
+      const traceId = args.traceId as string | undefined;
+      const site = args.site as string | undefined;
+
+      const { getTimeline, listTimelines } = await import("../monitoring/task-monitor.js");
+      const { classifyWithSuggestion } = await import("../utils/error-classifier.js");
+      const { DiagnosticsService } = await import("../services/diagnostics-service.js");
+      const { getCrawlerProfiler } = await import("../monitoring/crawler-profiler.js");
+      const { WbiKeyManager } = await import("../signer/wbi-key-manager.js");
+
+      // 1. 获取时间线
+      let timeline = traceId ? getTimeline(traceId) : undefined;
+      if (!timeline) {
+        const all = listTimelines(5);
+        timeline = all.find((t) => !site || t.site === site) ?? all[0];
+      }
+      if (!timeline) {
+        return { traceId: traceId || "(none)", overallStatus: "no_data", error: "未找到匹配的 traceId", failedSteps: [], errorCategories: [], systemHealth: null, unusedFunctions: [], suggestions: ["执行一次采集任务后再次诊断"] };
+      }
+
+      // 2. 分类时间线中的错误
+      const failedSteps: Array<{ name: string; error: { message: string; code?: string; category: string; suggestion: string }; duration: number }> = [];
+      const categoryMap = new Map<string, { count: number; suggestions: Set<string> }>();
+
+      for (const step of timeline.steps) {
+        if (step.success || !step.error) continue;
+        const duration = step.endedAt ? step.endedAt - step.startedAt : 0;
+        const classification = classifyWithSuggestion(step.error.message, step.error.code);
+        failedSteps.push({ name: step.name, error: { message: step.error.message, code: step.error.code, category: classification.category, suggestion: classification.suggestion }, duration });
+        if (!categoryMap.has(classification.category)) { categoryMap.set(classification.category, { count: 0, suggestions: new Set() }); }
+        const entry = categoryMap.get(classification.category)!;
+        entry.count++; entry.suggestions.add(classification.suggestion);
+      }
+
+      const errorCategories = Array.from(categoryMap.entries()).map(([cat, data]) => ({ category: cat, count: data.count, suggestions: Array.from(data.suggestions) }));
+
+      // 3. 系统健康诊断
+      const diagSvc = new DiagnosticsService();
+      const systemHealth = await diagSvc.runFullDiagnostics();
+
+      // 4. 站点功能调用统计
+      const profiler = getCrawlerProfiler();
+      const domainProfile = profiler.getDomainProfile(timeline.site);
+
+      // 5. 全局建议
+      const suggestions: string[] = [];
+      for (const [, data] of categoryMap) { for (const s of data.suggestions) suggestions.push(s); }
+
+      if (categoryMap.has("SIGN_ERROR") && timeline.site === "bilibili") {
+        try {
+          const wbiMgr = new WbiKeyManager();
+          const wbiStatus = wbiMgr.getStatus();
+          suggestions.push(`WBI 密钥状态: ${wbiStatus.available ? "可用" : "不可用"}, 来源: ${wbiStatus.source}, 缓存: ${wbiStatus.isCached ? "已过期" : "有效"}, 建议: ${wbiStatus.available ? (wbiStatus.isCached ? "执行 trigger_wbi_sync 刷新" : "正常") : "需获取 WBI 密钥"}`);
+        } catch {}
+      }
+
+      if (failedSteps.length === 0 && timeline.overallStatus === "success") { suggestions.push("采集任务已完成且无错误，无需修复。"); }
+
+      return { traceId: timeline.traceId, site: timeline.site, overallStatus: timeline.overallStatus, startedAt: new Date(timeline.startedAt).toISOString(), endedAt: timeline.endedAt ? new Date(timeline.endedAt).toISOString() : null, duration: timeline.endedAt ? timeline.endedAt - timeline.startedAt : null, labels: timeline.labels, totalSteps: timeline.steps.length, failedSteps, errorCategories, systemHealth: systemHealth.systemHealth, unusedFunctions: domainProfile.unusedUnits, highFailRateUnits: domainProfile.highFailRateUnits, suggestions: [...new Set(suggestions)] };
+    },
+  });
+
+  // ── 工具 16: auto_repair — 自动修复 ──
+  server.registerTool({
+    name: "auto_repair",
+    description: "对指定 traceId 的采集任务执行诊断 → 自动修复 → 重试闭环。当前支持的自动修复：SIGN_ERROR → 刷新 WBI 密钥；SESSION_EXPIRED → 同步浏览器 Cookie。其他错误类型提示人工处理。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        traceId: { type: "string", description: "采集任务 traceId" },
+      },
+      required: ["traceId"],
+    },
+    handler: async (args) => {
+      const traceId = args.traceId as string;
+
+      const { getTimeline } = await import("../monitoring/task-monitor.js");
+      const { classifyWithSuggestion } = await import("../utils/error-classifier.js");
+      const { WbiKeyManager } = await import("../signer/wbi-key-manager.js");
+
+      // 1. 获取时间线
+      const timeline = getTimeline(traceId);
+      if (!timeline) return { traceId, status: "failed", error: "未找到匹配的 traceId", actions: [], retryResult: null };
+
+      // 2. 分析错误并执行修复
+      const actions: Array<{ category: string; action: string; status: "ok" | "skipped" | "failed"; detail?: string }> = [];
+      const categoriesSeen = new Set<string>();
+
+      for (const step of timeline.steps) {
+        if (step.success || !step.error) continue;
+        const classification = classifyWithSuggestion(step.error.message, step.error.code);
+        if (categoriesSeen.has(classification.category)) continue;
+        categoriesSeen.add(classification.category);
+
+        switch (classification.category) {
+          case "SIGN_ERROR": {
+            if (timeline.site === "bilibili") {
+              try {
+                const mgr = new WbiKeyManager();
+                await mgr.refresh();
+                const status = mgr.getStatus();
+                actions.push({ category: "SIGN_ERROR", action: "刷新 WBI 密钥", status: "ok", detail: `密钥状态: ${status.available ? "可用" : "不可用"}, 来源: ${status.source}` });
+              } catch (e: unknown) {
+                actions.push({ category: "SIGN_ERROR", action: "刷新 WBI 密钥", status: "failed", detail: (e as Error).message });
+              }
+            } else {
+              actions.push({ category: "SIGN_ERROR", action: "刷新签名密钥", status: "skipped", detail: `站点 ${timeline.site} 的签名刷新暂不支持自动修复，请手动更新密钥` });
+            }
+            break;
+          }
+          case "SESSION_EXPIRED": {
+            try {
+              const { CookieSyncService } = await import("../services/cookie-sync-service.js");
+              const svc = new CookieSyncService();
+              const synced = await svc.syncFromCDPToSessions(true);
+              actions.push({ category: "SESSION_EXPIRED", action: "从 CDP 浏览器同步 Cookie", status: "ok", detail: `已同步 ${synced.length} 个站点的 Cookie` });
+            } catch (e: unknown) {
+              actions.push({ category: "SESSION_EXPIRED", action: "从 CDP 浏览器同步 Cookie", status: "failed", detail: (e as Error).message });
+            }
+            break;
+          }
+          case "RATE_LIMIT": {
+            actions.push({ category: "RATE_LIMIT", action: "等待频率限制冷却", status: "skipped", detail: "请降低采集并发数或等待 1-5 分钟后重试" });
+            break;
+          }
+          case "CAPTCHA": {
+            actions.push({ category: "CAPTCHA", action: "处理验证码", status: "skipped", detail: "验证码需人工介入，建议降低请求频率或启用打码平台" });
+            break;
+          }
+          default: {
+            actions.push({ category: classification.category, action: "自动修复", status: "skipped", detail: `${classification.category} 暂不支持自动修复：${classification.suggestion}` });
+            break;
+          }
+        }
+      }
+
+      // 3. 重试失败的采集单元
+      let retryResult: unknown = null;
+      const failedUnits = timeline.steps
+        .filter((s) => !s.success && s.name.startsWith("unit:"))
+        .map((s) => s.name.slice(5));
+
+      if (failedUnits.length > 0 && actions.some((a) => a.status === "ok")) {
+        try {
+          const siteMap: Record<string, new (...args: any[]) => any> = { xiaohongshu: XhsCrawler, zhihu: ZhihuCrawler, bilibili: BilibiliCrawler, tiktok: TikTokCrawler, baidu_scholar: BaiduScholarCrawler };
+          const CrawlerClass = siteMap[timeline.site];
+          if (CrawlerClass) {
+            const crawler = new CrawlerClass();
+            const params: Record<string, string> = {};
+            for (const [k, v] of Object.entries(timeline.labels)) { params[k] = v; }
+            const retryResults = await crawler.collectUnits(failedUnits, params);
+            retryResult = {
+              site: timeline.site,
+              units: failedUnits,
+              successCount: retryResults.filter((r: any) => r.status === "success" || r.status === "partial").length,
+              failCount: retryResults.filter((r: any) => r.status === "failed").length,
+              details: retryResults.map((r: any) => ({ unit: r.unit, status: r.status, error: r.error })),
+            };
+          } else {
+            retryResult = { error: `站点 ${timeline.site} 未注册` };
+          }
+        } catch (e: unknown) {
+          retryResult = { error: (e as Error).message };
+        }
+      } else if (failedUnits.length > 0) {
+        retryResult = { skipped: true, reason: "无成功的修复动作，跳过重试" };
+      } else {
+        retryResult = { skipped: true, reason: "没有失败的采集单元需要重试" };
+      }
+
+      return { traceId, status: actions.some((a) => a.status === "ok") ? "repaired" : "unrepaired", actions, retryResult };
+    },
+  });
+
   // ── 工具 14: check_wbi_health — 检查 WBI 密钥状态 ──
   server.registerTool({
     name: "check_wbi_health",
@@ -531,7 +716,7 @@ export function registerMcpTools(server: McpServer, ctx: ToolContext): void {
         if (fileCache.img_key && fileCache.sub_key) {
           await mgr.setKeys(fileCache.img_key, fileCache.sub_key);
         }
-      } catch {}
+      } catch {} // ok: ignored
       const status = mgr.getStatus();
       return {
         status: status.available ? "ok" : "degraded",

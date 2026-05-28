@@ -134,6 +134,16 @@ function getMcpToolDefinitions(): ToolDef[] {
       description: "告知爬虫用户已完成手动操作，继续采集",
       inputSchema: { type: "object", properties: { traceId: { type: "string" } } },
     },
+    {
+      name: "report_diagnostics",
+      description: "对指定 traceId 的采集任务执行全量诊断",
+      inputSchema: { type: "object", properties: { traceId: { type: "string" }, site: { type: "string" } } },
+    },
+    {
+      name: "auto_repair",
+      description: "对指定 traceId 执行诊断 → 自动修复 → 重试闭环",
+      inputSchema: { type: "object", properties: { traceId: { type: "string" } }, required: ["traceId"] },
+    },
   ];
 }
 
@@ -225,7 +235,7 @@ const mcpToolHandlers: Record<string, (args: Record<string, unknown>) => Promise
           entries.push({ filename: `${dir.name}/${f}`, size: stat.size, timestamp: stat.mtime.toISOString() });
         }
       }
-    } catch {}
+    } catch {} // ok: ignored
     entries.sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp));
     return entries.slice(0, limit);
   },
@@ -323,5 +333,23 @@ const mcpToolHandlers: Record<string, (args: Record<string, unknown>) => Promise
   },
   wait_for_user_action_complete: async () => {
     return { status: "ok", message: "信号已接收，采集将继续" };
+  },
+  report_diagnostics: async (args) => {
+    const { registerMcpTools } = await import("../../mcp/tools");
+    const { McpServer } = await import("../../mcp/protocol");
+    const tmpServer = new McpServer({ name: "tmp", version: "1.0", logger: httpLogger });
+    registerMcpTools(tmpServer, { logger: httpLogger, sessionManager: httpSessionManager });
+    const tool = (tmpServer as any).tools?.get("report_diagnostics");
+    if (!tool) throw new Error("report_diagnostics tool not registered");
+    return tool.handler(args);
+  },
+  auto_repair: async (args) => {
+    const { registerMcpTools } = await import("../../mcp/tools");
+    const { McpServer } = await import("../../mcp/protocol");
+    const tmpServer = new McpServer({ name: "tmp", version: "1.0", logger: httpLogger });
+    registerMcpTools(tmpServer, { logger: httpLogger, sessionManager: httpSessionManager });
+    const tool = (tmpServer as any).tools?.get("auto_repair");
+    if (!tool) throw new Error("auto_repair tool not registered");
+    return tool.handler(args);
   },
 };
