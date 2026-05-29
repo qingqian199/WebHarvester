@@ -42,6 +42,23 @@ async function main() {
   }));
   const screenshot = await page.screenshot({ type: "png", fullPage: false }).catch(() => null);
 
+  // Capture response bodies for text-based entries
+  const textMimeTypes = ["application/json", "text/", "application/xml", "application/x-www-form-urlencoded"];
+  if (cdpSession) {
+    for (const entry of harEntries) {
+      if (!entry.requestId || !entry.mimeType) continue;
+      if (!textMimeTypes.some((t) => entry.mimeType.startsWith(t))) continue;
+      if (entry.status >= 400) continue;
+      try {
+        const bodyResp = await cdpSession.send("Network.getResponseBody", { requestId: entry.requestId });
+        if (bodyResp?.body) {
+          entry.responseBody = bodyResp.body.length > 50000 ? bodyResp.body.slice(0, 50000) : bodyResp.body;
+          entry.responseBodyBase64 = bodyResp.base64Encoded || false;
+        }
+      } catch { /* body not available */ }
+    }
+  }
+
   await browser.close();
 
   const result = { success: true, ...pageData, har: { totalRequests: harEntries.length, entries: harEntries }, screenshot: screenshot ? screenshot.toString("base64") : null, timing: Date.now() - startTime };
