@@ -37,7 +37,7 @@ export async function handleSingleHarvest(deps: CliDeps, action: CliAction): Pro
       const svc = new HarvesterService(deps.logger, browser, storage, httpEngine, deps.dispatcher);
       await svc.harvest(action.config, "all", action.saveSession, sessionManager, action.profile, sessionState ?? undefined);
       return;
-    } catch { deps.logger.warn("CDP 直连失败，切换到 Node.js 子进程"); }
+    } catch { /* Bun 下 CDP 超时是预期行为，走 Node.js 子进程兜底 */ }
 
     // 兜底：Node.js 子进程 CDP 抓取（绕过 Bun WebSocket 不兼容）
     try {

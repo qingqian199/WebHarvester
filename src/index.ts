@@ -140,8 +140,8 @@ async function bootstrap() {
         const { registerCdpBrowser } = await import("./services/BrowserProvider");
         await registerCdpBrowser(chromeServiceInstance!.port);
         console.log(`✅ ChromeService 已就绪 (端口 ${chromeServiceInstance!.port})`);
-      } catch (e: any) {
-        console.error(`❌ ChromeService CDP 注册失败: ${e.message}`);
+      } catch {
+        // Bun 环境下 CDP WebSocket 超时是预期行为，由 single-harvest.ts 的 Node.js 子进程兜底
       }
     }).catch(() => {
       console.error("❌ ChromeService 启动失败");
