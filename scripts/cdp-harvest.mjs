@@ -86,6 +86,16 @@ async function main() {
   }));
   const screenshot = await page.screenshot({ type: "png", fullPage: false }).catch(() => null);
 
+  // Capture cookies and storage
+  let cookies = [];
+  let localStorageData = {};
+  let sessionStorageData = {};
+  try {
+    cookies = await context.cookies();
+    localStorageData = await page.evaluate(() => { const d = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k) d[k] = localStorage.getItem(k) || ""; } return d; }).catch(() => ({}));
+    sessionStorageData = await page.evaluate(() => { const d = {}; for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); if (k) d[k] = sessionStorage.getItem(k) || ""; } return d; }).catch(() => ({}));
+  } catch { /* storage not available */ }
+
   // Capture response bodies for text-based entries
   const textMimeTypes = ["application/json", "text/", "application/xml", "application/x-www-form-urlencoded"];
   if (cdpSession) {
@@ -106,6 +116,14 @@ async function main() {
 
   // Anti-crawl detection
   const antiCrawlFindings = detectAntiCrawl(harEntries, pageData);
+
+  // Session data summary
+  const sessionSummary = {
+    cookies: cookies.length,
+    cookieNames: cookies.map((c) => c.name).slice(0, 30),
+    localStorageKeys: Object.keys(localStorageData).slice(0, 20),
+    hasSessionStorage: Object.keys(sessionStorageData).length > 0,
+  };
 
   // Save separate files
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -142,12 +160,19 @@ async function main() {
     timestamp: new Date().toISOString(),
   }, null, 2), "utf-8");
 
+  // 5. Session state (cookies + storage)
+  writeFileSync(resolve(outDir, `${baseName}-session.json`), JSON.stringify({
+    cookies, localStorage: localStorageData, sessionStorage: sessionStorageData,
+    summary: sessionSummary, timestamp: new Date().toISOString(),
+  }, null, 2), "utf-8");
+
   console.log(JSON.stringify({
     success: true, title: pageData.title, textLength: pageData.text.length,
     harCount: harEntries.length, hasScreenshot: !!screenshot,
     antiCrawlDetected: antiCrawlFindings.length > 0,
     antiCrawlFindings: antiCrawlFindings.map((f) => f.type),
-    files: { page: `${baseName}-page.json`, har: `${baseName}-har.json`, screenshot: screenshotFile, anticrawl: `${baseName}-anticrawl.json` },
+    cookies: sessionSummary.cookies,
+    files: { page: `${baseName}-page.json`, har: `${baseName}-har.json`, screenshot: screenshotFile, anticrawl: `${baseName}-anticrawl.json`, session: `${baseName}-session.json` },
     timing: Date.now() - startTime + "ms",
   }));
   process.exit(0);
