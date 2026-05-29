@@ -16,19 +16,19 @@ async function main() {
   const page = await context.newPage();
 
   // Network capture via CDP session
-  const harEntries: any[] = [];
-  let cdpSession: any = null;
+  const harEntries = [];
+  let cdpSession = null;
   try {
     cdpSession = await context.newCDPSession(page);
     await cdpSession.send("Network.enable");
-    cdpSession.on("Network.requestWillBeSent", (p: any) => {
+    cdpSession.on("Network.requestWillBeSent", (p) => {
       harEntries.push({ type: "request", timeMs: Date.now() - startTime, request: { url: p.request.url, method: p.request.method, headers: p.request.headers, postData: p.request.postData }, requestId: p.requestId, resourceType: p.type });
     });
-    cdpSession.on("Network.responseReceived", (p: any) => {
-      const e = harEntries.find((x: any) => x.requestId === p.requestId);
+    cdpSession.on("Network.responseReceived", (p) => {
+      const e = harEntries.find((x) => x.requestId === p.requestId);
       if (e) { e.status = p.response.status; e.statusText = p.response.statusText; e.responseHeaders = p.response.headers; e.mimeType = p.response.mimeType; e.responseTimeMs = Date.now() - startTime; }
     });
-  } catch { /* CDP session not available in some connectOverCDP modes */ }
+  } catch (e) { /* CDP session not available in some connectOverCDP modes */ }
 
   // Navigate
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
