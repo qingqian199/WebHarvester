@@ -1,4 +1,3 @@
-import "source-map-support/register";
 import fs from "fs";
 import path from "path";
 import { loadAppConfig } from "./utils/config-loader";
@@ -131,6 +130,7 @@ async function bootstrap() {
   }
 
   if (FeatureFlags.enableChromeService && appCfg.chromeService) {
+    await killChromeOnPort(appCfg.chromeService.port);
     const { ChromeService } = await import("./services/ChromeService");
     chromeServiceInstance = new ChromeService(appCfg.chromeService.port, appCfg.chromeService.chromePath, appCfg.chromeService.userDataDir);
     setChromeServiceInstance(chromeServiceInstance);
@@ -224,6 +224,22 @@ async function handleBackendStatus(): Promise<void> {
   } catch {
     console.log("\n❌ 后端服务不可用 (请启动 backend/)\n");
   }
+}
+
+async function killChromeOnPort(port: number): Promise<void> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/json/version`, { timeout: 1000 } as any);
+    if (res.ok) {
+      console.warn(`⚠️ 端口 ${port} 已被 Chrome 占用，尝试关闭...`);
+      const { execSync } = await import("child_process");
+      execSync(`taskkill /f /im chrome.exe 2>nul`, { timeout: 3000 });
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        try { const r2 = await fetch(`http://127.0.0.1:${port}/json/version`, { timeout: 500 } as any); if (!r2.ok) break; }
+        catch { break; }
+      }
+    }
+  } catch { /* 端口无人占用 */ }
 }
 
 bootstrap().catch((err) => {

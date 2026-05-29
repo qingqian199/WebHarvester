@@ -79,6 +79,8 @@ export class ChromeService {
 
     this.proc = spawn(this._chromePath, [
       `--remote-debugging-port=${this._port}`,
+      "--remote-allow-origins=*",
+      "--remote-debugging-address=127.0.0.1",
       `--user-data-dir=${this._userDataDir}`,
       "--no-first-run",
       "--no-default-browser-check",
@@ -88,7 +90,9 @@ export class ChromeService {
       "--disable-translate",
       "--disable-default-apps",
       "--mute-audio",
-      "--window-size=1280,720",
+      "--headless=new",
+      "--disable-gpu",
+      "--no-sandbox",
     ], { stdio: "ignore", detached: false });
 
     this.proc.on("exit", (code) => {

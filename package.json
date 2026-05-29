@@ -6,7 +6,7 @@
   "description": "工程化Web逆向抓包、页面资产采集工具，低硬件适配+模块化解耦",
   "main": "src/index.ts",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "bun run src/index.ts",
     "batch": "ts-node src/index.ts --batch",
     "web": "ts-node src/index.ts --web",
     "build": "rimraf dist && tsc",
