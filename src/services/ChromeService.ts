@@ -90,9 +90,8 @@ export class ChromeService {
       "--disable-translate",
       "--disable-default-apps",
       "--mute-audio",
-      "--headless=new",
       "--disable-gpu",
-      "--no-sandbox",
+      "--window-size=1280,720",
     ], { stdio: "ignore", detached: false });
 
     this.proc.on("exit", (code) => {
