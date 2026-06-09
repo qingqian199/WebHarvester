@@ -12,6 +12,19 @@ interface McpToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 
+/** MCP JSON-RPC 响应中 content 项的格式 */
+export interface McpContentItem {
+  type: string;
+  text?: string;
+}
+
+/** MCP 工具调用的标准响应格式 */
+export interface McpResponse {
+  content?: McpContentItem[];
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+}
+
 let proc: ChildProcess | null = null;
 let rl: ReturnType<typeof createInterface> | null = null;
 let msgId = 0;
@@ -83,12 +96,24 @@ export async function callTool(name: string, args: Record<string, unknown> = {})
   return sendRequest("tools/call", { name, arguments: args });
 }
 
+/** 调用 MCP 工具并返回类型化响应 */
+export async function callToolTyped(name: string, args: Record<string, unknown> = {}): Promise<McpResponse> {
+  const result = await sendRequest("tools/call", { name, arguments: args });
+  return result as McpResponse;
+}
+
+/** 从 McpResponse 中提取首个 text content */
+export function getMcpText(response: McpResponse): string {
+  return response.content?.[0]?.text || "";
+}
+
 /** 获取可用工具列表 */
 export async function listTools(): Promise<McpToolDefinition[]> {
   if (toolsCache) return toolsCache;
   const result = await sendRequest("tools/list", {});
-  toolsCache = (result as any).tools as McpToolDefinition[];
-  return toolsCache!;
+  const resp = result as { tools?: McpToolDefinition[] };
+  toolsCache = resp.tools ?? null;
+  return toolsCache ?? [];
 }
 
 /** 断开 MCP 连接 */

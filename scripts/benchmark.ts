@@ -9,7 +9,6 @@
  * - 内存使用
  */
 
-import { LightHttpEngine } from "../src/adapters/LightHttpEngine";
 import { RealisticFingerprintProvider } from "../src/adapters/RealisticFingerprintProvider";
 
 interface BenchmarkResult {

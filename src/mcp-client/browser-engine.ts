@@ -6,7 +6,9 @@
 import { IBrowserAdapter } from "../core/ports/IBrowserAdapter";
 import { HarvestConfig, NetworkRequest, ElementItem, StorageSnapshot } from "../core/models";
 import { SessionState } from "../core/ports/ISessionManager";
-import { callTool, startMcp, stopMcp } from "./client";
+import { ILogger } from "../core/ports/ILogger";
+import { ConsoleLogger } from "../adapters/ConsoleLogger";
+import { callTool, callToolTyped, getMcpText, startMcp, stopMcp } from "./client";
 import { FileSessionManager } from "../adapters/FileSessionManager";
 import { MOBILE_FINGERPRINTS } from "../adapters/RealisticFingerprintProvider";
 
@@ -15,9 +17,11 @@ export class McpBrowserAdapter implements IBrowserAdapter {
   private startTime = 0;
   private currentUrl = "";
   private device: "pc" | "iPhone" | "Android";
+  private logger: ILogger;
 
-  constructor(device: "pc" | "iPhone" | "Android" = "pc") {
+  constructor(device: "pc" | "iPhone" | "Android" = "pc", logger?: ILogger) {
     this.device = device;
+    this.logger = logger ?? new ConsoleLogger();
   }
 
   async launch(
@@ -34,12 +38,14 @@ export class McpBrowserAdapter implements IBrowserAdapter {
 
     // 设置移动端模拟（如果开启）
     if (this.device !== "pc") {
-      const device = MOBILE_FINGERPRINTS[this.device];
-      if (device) {
+      const deviceProfile = MOBILE_FINGERPRINTS[this.device];
+      if (deviceProfile) {
         await callTool("browser_evaluate", {
-          function: `navigator.__defineGetter__('userAgent', ()=>'${device.userAgent.replace(/'/g, "\\'")}')`,
-        }).catch(() => {});
-        await callTool("browser_resize", { width: device.viewport.width, height: device.viewport.height });
+          function: `navigator.__defineGetter__('userAgent', ()=>'${deviceProfile.userAgent.replace(/'/g, "\\'")}')`,
+        }).catch((e: Error) => this.logger.warn("移动端 UA 注入失败", { err: e.message }));
+        await callTool("browser_resize", { width: deviceProfile.viewport.width, height: deviceProfile.viewport.height }).catch((e: Error) =>
+          this.logger.warn("移动端视口设置失败", { err: e.message }),
+        );
       }
     }
 
@@ -54,14 +60,18 @@ export class McpBrowserAdapter implements IBrowserAdapter {
         await callTool("browser_evaluate", {
           function: `document.cookie = "${cookieStr.replace(/"/g, "\\\"")}"`,
         });
-      } catch {}
+      } catch (e) {
+        this.logger.warn("登录态 Cookie 注入失败", { err: (e as Error).message });
+      }
     }
 
     // 自动截图（增强全量模式）
     if (enableFullCapture) {
       try {
         await callTool("browser_take_screenshot", {});
-      } catch {}
+      } catch (e) {
+        this.logger.warn("自动截图失败", { err: (e as Error).message });
+      }
     }
 
     this.launched = true;
@@ -101,42 +111,48 @@ export class McpBrowserAdapter implements IBrowserAdapter {
     const storage: StorageSnapshot = { localStorage: {}, sessionStorage: {}, cookies: [] };
     if (types.includes("cookies")) {
       try {
-        const result = await callTool("browser_evaluate", { function: "document.cookie" });
-        const cookieText = (result as any).content?.[0]?.text || "";
-        storage.cookies = cookieText
+        const response = await callToolTyped("browser_evaluate", { function: "document.cookie" });
+        const domain = new URL(this.currentUrl).hostname.replace(/^www\./, "");
+        storage.cookies = getMcpText(response)
           .split(";")
           .filter(Boolean)
           .map((pair: string) => {
-            const [name, ...rest] = pair.trim().split("=");
-            return { name: name?.trim() || "", value: rest.join("=")?.trim() || "" };
+            const [n, ...rest] = pair.trim().split("=");
+            return { name: n?.trim() || "", value: rest.join("=")?.trim() || "", domain: `.${domain}` };
           });
-      } catch {}
+      } catch (e) {
+        this.logger.warn("获取 Cookie 失败", { err: (e as Error).message });
+      }
     }
     if (types.includes("localStorage")) {
       try {
-        const result = await callTool("browser_evaluate", { function: "JSON.stringify(window.localStorage)" });
-        storage.localStorage = JSON.parse((result as any).content?.[0]?.text || "{}");
-      } catch {}
+        const response = await callToolTyped("browser_evaluate", { function: "JSON.stringify(window.localStorage)" });
+        storage.localStorage = JSON.parse(getMcpText(response) || "{}");
+      } catch (e) {
+        this.logger.warn("获取 localStorage 失败", { err: (e as Error).message });
+      }
     }
     if (types.includes("sessionStorage")) {
       try {
-        const result = await callTool("browser_evaluate", { function: "JSON.stringify(window.sessionStorage)" });
-        storage.sessionStorage = JSON.parse((result as any).content?.[0]?.text || "{}");
-      } catch {}
+        const response = await callToolTyped("browser_evaluate", { function: "JSON.stringify(window.sessionStorage)" });
+        storage.sessionStorage = JSON.parse(getMcpText(response) || "{}");
+      } catch (e) {
+        this.logger.warn("获取 sessionStorage 失败", { err: (e as Error).message });
+      }
     }
     return storage;
   }
 
   async executeScript<T>(script: string): Promise<T> {
-    const result = await callTool("browser_evaluate", { function: script });
-    const text = (result as any).content?.[0]?.text || "";
+    const response = await callToolTyped("browser_evaluate", { function: script });
+    const text = getMcpText(response);
     // 从 MCP 响应中提取实际值（格式: ### Result\n"value"\n### Ran Playwright code\n...）
     const match = text.match(/"([^"]+)"/);
     const clean = match ? match[1] : text.split("###")[0].trim();
     try {
-      return JSON.parse(clean);
+      return JSON.parse(clean) as T;
     } catch {
-      return clean as T;
+      return clean as unknown as T;
     }
   }
 
@@ -153,31 +169,35 @@ export class McpBrowserAdapter implements IBrowserAdapter {
 
     // 自动保存 Cookie 到会话管理器
     try {
-      const result = await callTool("browser_evaluate", { function: "document.cookie" });
-      const cookieText = (result as any).content?.[0]?.text || "";
+      const response = await callToolTyped("browser_evaluate", { function: "document.cookie" });
+      const domain = new URL(this.currentUrl).hostname.replace(/^www\./, "").split(".")[0];
+      const cookieText = getMcpText(response);
       const cookies = cookieText
         .split(";")
         .filter(Boolean)
         .map((pair: string) => {
-          const [name, ...rest] = pair.trim().split("=");
-          return { name: name?.trim() || "", value: rest.join("=")?.trim() || "" };
+          const [n, ...rest] = pair.trim().split("=");
+          return { name: n?.trim() || "", value: rest.join("=")?.trim() || "" };
         });
       if (cookies.length > 0) {
-        const domain = new URL(this.currentUrl).hostname.replace(/^www\./, "").split(".")[0];
         const sessionMgr = new FileSessionManager();
         await sessionMgr.save(`${domain}:mcp`, {
-          cookies: cookies.map((c: any) => ({ name: c.name, value: c.value, domain: `.${domain}`, path: "/" })),
+          cookies: cookies.map((c) => ({ name: c.name, value: c.value, domain: `.${domain}`, path: "/" })),
           localStorage: {},
           sessionStorage: {},
           createdAt: Date.now(),
           lastUsedAt: Date.now(),
         });
       }
-    } catch {}
+    } catch (e) {
+      this.logger.warn("关闭时保存 Cookie 失败", { err: (e as Error).message });
+    }
 
     try {
       await callTool("browser_close", {});
-    } catch {}
+    } catch (e) {
+      this.logger.warn("关闭浏览器失败", { err: (e as Error).message });
+    }
     stopMcp();
     this.launched = false;
   }
