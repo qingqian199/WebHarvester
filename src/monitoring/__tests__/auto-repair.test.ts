@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { TaskMonitor, clearTimelines, getTimeline } from "../task-monitor.js";
+import { TaskMonitor, clearTimelines, getTimeline } from "../task-monitor";
 
 describe("auto_repair simulation", () => {
   beforeEach(() => clearTimelines());
@@ -31,8 +31,9 @@ describe("auto_repair simulation", () => {
     m.endStep(false, new Error("network timeout"));
     m.finish();
 
-    const failedUnits = m.getTimeline().steps
-      .filter((s) => !s.success && s.name.startsWith("unit:"))
+    const failedUnits = m
+      .getTimeline()
+      .steps.filter((s) => !s.success && s.name.startsWith("unit:"))
       .map((s) => s.name.slice(5));
 
     expect(failedUnits).toEqual(["bili_video_info", "bili_video_comments"]);
@@ -56,8 +57,9 @@ describe("auto_repair simulation", () => {
     m.finish();
 
     const categories = new Set(
-      m.getTimeline().steps
-        .filter((s) => s.error)
+      m
+        .getTimeline()
+        .steps.filter((s) => s.error)
         .map((s) => s.error!.category),
     );
 

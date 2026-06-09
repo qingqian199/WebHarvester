@@ -1,5 +1,5 @@
-import { generateTraceId } from "../utils/log-context.js";
-import { classifyError, ErrorCategory } from "../utils/error-classifier.js";
+import { generateTraceId } from "../utils/log-context";
+import { classifyError, ErrorCategory } from "../utils/error-classifier";
 
 // ── Types ──
 
@@ -134,7 +134,10 @@ export class TaskMonitor {
   private updateOverallStatus(): void {
     const steps = this.timeline.steps;
     const ended = steps.filter((s) => s.endedAt !== undefined);
-    if (ended.length === 0) { this.timeline.overallStatus = "running"; return; }
+    if (ended.length === 0) {
+      this.timeline.overallStatus = "running";
+      return;
+    }
     const allSuccess = ended.every((s) => s.success);
     const anyFailed = ended.some((s) => !s.success);
     const anySuccess = ended.some((s) => s.success);

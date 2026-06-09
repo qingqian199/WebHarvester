@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "@jest/globals";
-import { TaskMonitor, getTimeline, listTimelines, clearTimelines } from "../task-monitor.js";
-import { classifyError, classifyWithSuggestion, getSuggestion } from "../../utils/error-classifier.js";
-import { CrawlerProfiler, getCrawlerProfiler } from "../crawler-profiler.js";
+import { TaskMonitor, getTimeline, listTimelines, clearTimelines } from "../task-monitor";
+import { classifyError, classifyWithSuggestion, getSuggestion } from "../../utils/error-classifier";
+import { CrawlerProfiler, getCrawlerProfiler } from "../crawler-profiler";
 
 describe("TaskMonitor", () => {
   beforeEach(() => clearTimelines());
@@ -45,24 +45,30 @@ describe("TaskMonitor", () => {
 
   it("sets overallStatus to success when all steps pass", () => {
     const m = new TaskMonitor("bilibili");
-    m.startStep("step1"); m.endStep(true);
-    m.startStep("step2"); m.endStep(true);
+    m.startStep("step1");
+    m.endStep(true);
+    m.startStep("step2");
+    m.endStep(true);
     m.finish();
     expect(m.getTimeline().overallStatus).toBe("success");
   });
 
   it("sets overallStatus to failed when all steps fail", () => {
     const m = new TaskMonitor("bilibili");
-    m.startStep("step1"); m.endStep(false);
-    m.startStep("step2"); m.endStep(false);
+    m.startStep("step1");
+    m.endStep(false);
+    m.startStep("step2");
+    m.endStep(false);
     m.finish();
     expect(m.getTimeline().overallStatus).toBe("failed");
   });
 
   it("sets overallStatus to partial when some steps succeeded and some failed", () => {
     const m = new TaskMonitor("bilibili");
-    m.startStep("step1"); m.endStep(true);
-    m.startStep("step2"); m.endStep(false);
+    m.startStep("step1");
+    m.endStep(true);
+    m.startStep("step2");
+    m.endStep(false);
     m.finish();
     // At least one success and one failure → partial
     expect(m.getTimeline().overallStatus).toBe("partial");
@@ -86,13 +92,18 @@ describe("TaskMonitor", () => {
 
   it("wraps a failing async fn", async () => {
     const m = new TaskMonitor("bilibili");
-    await expect(m.wrap("fail_work", async () => { throw new Error("boom"); })).rejects.toThrow("boom");
+    await expect(
+      m.wrap("fail_work", async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
     expect(m.getTimeline().steps[0].success).toBe(false);
   });
 
   it("stores timeline and retrieves by traceId", () => {
     const m = new TaskMonitor("zhihu", "zh-001");
-    m.startStep("search"); m.endStep(true);
+    m.startStep("search");
+    m.endStep(true);
     const retrieved = getTimeline("zh-001");
     expect(retrieved).toBeTruthy();
     expect(retrieved!.site).toBe("zhihu");
