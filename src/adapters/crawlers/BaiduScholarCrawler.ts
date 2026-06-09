@@ -20,7 +20,9 @@ function extractPaperBasic(p: any): Record<string, any> {
   const authorAffs = (p.authors || []).map((a: any) => a.affiliate || "").filter(Boolean);
   const sources = (p.sourceList || []).map((s: any) => ({ url: s.url || "", name: s.anchor || "", domain: s.domain || "" }));
   // 尝试从 DOI 提取卷期页码: CNKI:SUN:JOURNAL.YEAR-ISSUE-PAGE
-  let vol = "", issue = "", pages = "";
+  let vol = "",
+    issue = "",
+    pages = "";
   const doi = p.doi || "";
   if (doi.startsWith("CNKI:SUN:")) {
     const parts = doi.split(".");
@@ -63,15 +65,14 @@ function extractPaperBasic(p: any): Record<string, any> {
 /** 从 detail 页检查是否有 CAPTCHA，如有则截图并提示。返回 true 表示被拦截。 */
 async function checkCaptcha(browser: PlaywrightAdapter, pid?: string, logger?: any): Promise<boolean> {
   try {
-    const title = await browser.executeScript<string>("document.title").catch(() => "") as unknown as string;
+    const title = (await browser.executeScript<string>("document.title").catch(() => "")) as unknown as string;
     const isCaptcha = title.includes("百度安全验证") || title.includes("安全验证");
     if (isCaptcha) {
       // 截图保存
       try {
         const dir = path.resolve(CAPTCHA_SCREENSHOT_DIR);
         await fs.mkdir(dir, { recursive: true });
-        const b = (browser as any).lcm as BrowserLifecycleManager | undefined;
-        const page = b?.getPage?.();
+        const page = browser.getPage();
         if (page) {
           const filename = `baidu_captcha_${pid || Date.now()}_${Date.now()}.png`;
           await page.screenshot({ path: path.join(dir, filename), fullPage: false });
@@ -82,7 +83,9 @@ async function checkCaptcha(browser: PlaywrightAdapter, pid?: string, logger?: a
       logger?.warn("  💡 建议: 使用非 headless 模式 (headless: false) 可大幅降低触发概率");
     }
     return isCaptcha;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -90,29 +93,20 @@ async function checkCaptcha(browser: PlaywrightAdapter, pid?: string, logger?: a
  * 降级链：headless=false（可视模式）→ headless=true（隐身模式）
  * 添加额外启动参数和初始化脚本以绕过 BIOS 检测。
  */
-async function createStealthPage(
-  url: string,
-  logger: any,
-): Promise<{ browser: PlaywrightAdapter; page: any } | null> {
+async function createStealthPage(url: string, logger: any): Promise<{ browser: PlaywrightAdapter; page: any } | null> {
   // CI/测试环境跳过 headless=false（避免启动可视窗口）
   const modes = process.env.CI ? [true] : [false, true];
   for (const headless of modes) {
     try {
       const lcm = new BrowserLifecycleManager(logger);
-      const page = await (lcm as any).launch(
-        url,
-        headless,
-        undefined,
-        "domcontentloaded",
-        headless ? 20000 : 5000,
-      );
+      const page = await lcm.launch(url, headless, undefined, "domcontentloaded", headless ? 20000 : 5000);
 
       await injectAntiDetection(page);
 
       const adapter = new PlaywrightAdapter(logger);
-      (adapter as any).lcm = lcm;
-      (adapter as any).lcm.page = page;
-      (adapter as any).lcm.pooled = false;
+      adapter.replaceLifecycleManager(lcm);
+      lcm.setPage(page);
+      lcm.markPooled();
 
       logger.info(`  浏览器启动成功 (${headless ? "headless" : "可视模式"})`);
       return { browser: adapter, page };
@@ -127,13 +121,22 @@ export class BaiduScholarCrawler extends BaseCrawler {
   readonly name = "xueshu";
   readonly domain = SCHOLAR_DOMAIN;
 
-  constructor(proxyProvider?: IProxyProvider) { super("xueshu", proxyProvider); this.registerHandlers(); }
-
-  matches(url: string): boolean {
-    try { return new URL(url).hostname.includes(SCHOLAR_DOMAIN); } catch { return false; }
+  constructor(proxyProvider?: IProxyProvider) {
+    super("xueshu", proxyProvider);
+    this.registerHandlers();
   }
 
-  protected getReferer(_url: string): string { return "https://xueshu.baidu.com/"; }
+  matches(url: string): boolean {
+    try {
+      return new URL(url).hostname.includes(SCHOLAR_DOMAIN);
+    } catch {
+      return false;
+    }
+  }
+
+  protected getReferer(_url: string): string {
+    return "https://xueshu.baidu.com/";
+  }
 
   private registerHandlers(): void {
     // ── 搜索论文（HTTP 直连，快速翻页） ──
@@ -168,9 +171,11 @@ export class BaiduScholarCrawler extends BaseCrawler {
       }
 
       return {
-        unit, status: "success",
+        unit,
+        status: "success",
         data: { code: 0, data: { papers: allPapers, total: allPapers.length } },
-        method: "api", responseTime: totalTime,
+        method: "api",
+        responseTime: totalTime,
       };
     });
 
@@ -293,8 +298,8 @@ export class BaiduScholarCrawler extends BaseCrawler {
 
             // 策略链: SSR → Inline Script → JSON-LD → DOM
             const adapter = new PlaywrightAdapter(this.logger);
-            (adapter as any).lcm.page = rawPage;
-            (adapter as any).lcm.context = cdpContext;
+            adapter.lcm.setPage(rawPage);
+            adapter.lcm.setContext(cdpContext);
 
             const { data: detail, source } = await this.runStrategyChain(
               DEFAULT_PAPER_STRATEGIES.map((strategy) => ({
@@ -311,7 +316,9 @@ export class BaiduScholarCrawler extends BaseCrawler {
             await releasePage(rawPage, "__cdp__");
             return { ...target, _detailStatus: "no_data" };
           } catch (e: any) {
-            if (rawPage) { await releasePage(rawPage, "__cdp__").catch(() => {}); }
+            if (rawPage) {
+              await releasePage(rawPage, "__cdp__").catch(() => {});
+            }
             // 页面池死锁：不返回错误，降级到 Stealth 模式继续
             const { PoolDeadlockError } = await import("../../utils/BrowserPool");
             if (e instanceof PoolDeadlockError) {
@@ -326,17 +333,11 @@ export class BaiduScholarCrawler extends BaseCrawler {
         let browser: PlaywrightAdapter | null = null;
         try {
           if (!process.env.JEST_WORKER_ID) {
-            const stealth = await createStealthPage(
-              `https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`,
-              this.logger,
-            );
+            const stealth = await createStealthPage(`https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`, this.logger);
             if (stealth) browser = stealth.browser;
           }
           if (!browser) {
-            const result = await this.fetchPageContent(
-              `https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`,
-              session, ".xueshu.baidu.com",
-            );
+            const result = await this.fetchPageContent(`https://xueshu.baidu.com/usercenter/paper/show?paperid=${pid}`, session, ".xueshu.baidu.com");
             browser = result.browser;
           }
 
@@ -345,7 +346,10 @@ export class BaiduScholarCrawler extends BaseCrawler {
 
           const ssrResult = await this.extractSSRData(browser!, "scholar_paper_detail");
           if (ssrResult.body) {
-            let sp: any; try { sp = JSON.parse(ssrResult.body); } catch {}
+            let sp: any;
+            try {
+              sp = JSON.parse(ssrResult.body);
+            } catch {}
             if (sp && (sp._hasInitState || sp._hasNextData || sp._hasNuxtData)) {
               const ds = sp.data || sp.nextData?.props?.pageProps || sp.nuxtData;
               const detail = tryExtractPaperDetailFromAny(ds || sp);
@@ -365,7 +369,13 @@ export class BaiduScholarCrawler extends BaseCrawler {
             if (jd.name) mapped.标题 = jd.name;
             if (jd.description) mapped.摘要 = jd.description;
             if (jd.datePublished) mapped.发表年份 = jd.datePublished.slice(0, 4);
-            if (jd.author) mapped.作者 = Array.isArray(jd.author) ? jd.author.map((a: any) => a.name || "").filter(Boolean).join("; ") : jd.author.name || "";
+            if (jd.author)
+              mapped.作者 = Array.isArray(jd.author)
+                ? jd.author
+                    .map((a: any) => a.name || "")
+                    .filter(Boolean)
+                    .join("; ")
+                : jd.author.name || "";
             return { ...target, ...mapped, _detailStatus: "partial", _detailSource: "jsonld" };
           }
 
@@ -378,7 +388,7 @@ export class BaiduScholarCrawler extends BaseCrawler {
         } catch (e: any) {
           return { ...target, _detailStatus: "error", _detailError: e.message };
         } finally {
-          if (browser) await (browser as any).close().catch(() => {});
+          if (browser) await browser.close().catch(() => {});
         }
       };
 
@@ -410,18 +420,23 @@ export class BaiduScholarCrawler extends BaseCrawler {
       const partialCount = enriched.filter((p) => p._detailStatus === "partial").length;
       const captchaCount = enriched.filter((p) => p._detailStatus === "captcha").length;
       const noDataCount = enriched.filter((p) => p._detailStatus === "no_data").length;
-      this.logger.info(`✅ 论文详情完成: ${okCount}/${targets.length} 篇成功${partialCount > 0 ? `, ${partialCount} 篇部分` : ""}${captchaCount > 0 ? `, ${captchaCount} 篇验证码拦截` : ""}${noDataCount > 0 ? `, ${noDataCount} 篇无数据` : ""}`);
+      this.logger.info(
+        `✅ 论文详情完成: ${okCount}/${targets.length} 篇成功${partialCount > 0 ? `, ${partialCount} 篇部分` : ""}${captchaCount > 0 ? `, ${captchaCount} 篇验证码拦截` : ""}${noDataCount > 0 ? `, ${noDataCount} 篇无数据` : ""}`,
+      );
 
       return {
-        unit, status: okCount + partialCount > 0 ? "success" : "failed",
+        unit,
+        status: okCount + partialCount > 0 ? "success" : "failed",
         data: {
-          code: 0, data: { papers: enriched, total: enriched.length, successCount: okCount },
+          code: 0,
+          data: { papers: enriched, total: enriched.length, successCount: okCount },
           _searchFallback: enriched.map((p) => {
             const { _paperId, _detailStatus, _detailSource, _detailError, _domPreview, ...rest } = p;
             return rest;
           }),
         },
-        method: usedCDP ? "cdp_detail_scan" : "browser_detail_scan", responseTime: Date.now() - startTime,
+        method: usedCDP ? "cdp_detail_scan" : "browser_detail_scan",
+        responseTime: Date.now() - startTime,
       };
     });
   }
@@ -434,7 +449,9 @@ export class BaiduScholarCrawler extends BaseCrawler {
         if (kw && !params.keyword) params.keyword = kw;
         const pid = u.searchParams.get("paperid");
         if (pid && !params.paper_id) params.paper_id = pid;
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     const results: UnitResult[] = [];
@@ -447,7 +464,14 @@ export class BaiduScholarCrawler extends BaseCrawler {
         const r = await this.dispatchUnit(unit, params, session, undefined, results);
         results.push(r);
       } catch (e: unknown) {
-        results.push({ unit, status: "failed", data: null, method: "none", error: e instanceof Error ? e.message : String(e), responseTime: Date.now() - start });
+        results.push({
+          unit,
+          status: "failed",
+          data: null,
+          method: "none",
+          error: e instanceof Error ? e.message : String(e),
+          responseTime: Date.now() - start,
+        });
       }
     }
 
@@ -458,7 +482,14 @@ export class BaiduScholarCrawler extends BaseCrawler {
         const r = await this.dispatchUnit("scholar_paper_detail", depParams, session, undefined, results);
         results.push(r);
       } catch (e: unknown) {
-        results.push({ unit: "scholar_paper_detail", status: "failed", data: null, method: "none", error: e instanceof Error ? e.message : String(e), responseTime: Date.now() - start });
+        results.push({
+          unit: "scholar_paper_detail",
+          status: "failed",
+          data: null,
+          method: "none",
+          error: e instanceof Error ? e.message : String(e),
+          responseTime: Date.now() - start,
+        });
       }
     }
 
@@ -477,16 +508,21 @@ function tryExtractPaperDetailFromAny(obj: any): Record<string, any> | null {
     const paper = data.paper || data.paperDetail || data.detail?.paper || data.data?.paper || data.result || data;
     if (paper.paperId || paper.title || paper.authors) {
       const authors = (paper.authors || []).map((a: any) => a.showName || a.name || "").filter(Boolean);
-      const refs = (paper.referenceList || paper.references || []).map((r: any) =>
-        (r.title || r.name || "").replace(/<\/?[^>]+>/g, "")
-      ).filter(Boolean);
-      const citedList = (paper.citedByList || paper.citedList || []).slice(0, 20).map((c: any) =>
-        (c.title || c.name || "").replace(/<\/?[^>]+>/g, "")
-      ).filter(Boolean);
+      const refs = (paper.referenceList || paper.references || [])
+        .map((r: any) => (r.title || r.name || "").replace(/<\/?[^>]+>/g, ""))
+        .filter(Boolean);
+      const citedList = (paper.citedByList || paper.citedList || [])
+        .slice(0, 20)
+        .map((c: any) => (c.title || c.name || "").replace(/<\/?[^>]+>/g, ""))
+        .filter(Boolean);
       return {
         标题: (paper.title || "").replace(/<\/?[^>]+>/g, ""),
         作者: authors.join("; "),
-        作者单位: (paper.authors || []).map((a: any) => a.affiliate || "").filter(Boolean).join("; ") || "无",
+        作者单位:
+          (paper.authors || [])
+            .map((a: any) => a.affiliate || "")
+            .filter(Boolean)
+            .join("; ") || "无",
         发表年份: paper.publishYear || paper.year || "",
         摘要: (paper.abstract || paper.abstractStr || "").replace(/<\/?[^>]+>/g, ""),
         关键词: (paper.keyword || paper.keywords || "").replace(/<\/?[^>]+>/g, ""),
@@ -497,14 +533,15 @@ function tryExtractPaperDetailFromAny(obj: any): Record<string, any> | null {
         期: paper.issue || "",
         页码: paper.pages || paper.pageInfo || "",
         下载量: paper.downloadCount ?? paper.download ?? "无",
-        基金项目: (paper.fundInfo || paper.fund || paper.funding || "无"),
+        基金项目: paper.fundInfo || paper.fund || paper.funding || "无",
         参考文献: refs.length > 0 ? refs.join("\n") : "无",
         作者邮箱: (paper.authorEmails || []).join("; ") || paper.email || "无",
         导师信息: paper.advisor || paper.supervisor || paper.tutor || "无",
         论文分类号: paper.classification || paper.category || paper.classNo || "无",
         原文链接: (paper.pdfList || paper.fulltextList || paper.sourceList || [])
           .filter((s: any) => s.url || s.link)
-          .map((s: any) => (s.url || s.link || "")).join("\n"),
+          .map((s: any) => s.url || s.link || "")
+          .join("\n"),
         引用论文: citedList.length > 0 ? citedList.join("\n") : "无",
       };
     }
@@ -519,7 +556,9 @@ function tryExtractPaperDetailFromAny(obj: any): Record<string, any> | null {
 
 /** 扫描页面所有 inline script 标签，找包含论文数据的 JSON。 */
 async function scanAllScriptsForPaperData(browser: PlaywrightAdapter): Promise<any> {
-  const raw = await browser.executeScript<string>(`(() => {
+  const raw = await browser
+    .executeScript<string>(
+      `(() => {
     var scripts = document.querySelectorAll("script:not([src])");
     for (var s of scripts) {
       var t = (s.textContent || "").trim();
@@ -543,23 +582,39 @@ async function scanAllScriptsForPaperData(browser: PlaywrightAdapter): Promise<a
       } catch(e) {}
     }
     return "{}";
-  })()`).catch(() => "{}");
-  try { return JSON.parse(raw); } catch { return null; }
+  })()`,
+    )
+    .catch(() => "{}");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** 提取 Schema.org JSON-LD 数据。 */
 async function checkJSONLD(browser: PlaywrightAdapter): Promise<any> {
-  const raw = await browser.executeScript<string>(`(() => {
+  const raw = await browser
+    .executeScript<string>(
+      `(() => {
     var ld = document.querySelector('script[type="application/ld+json"]');
     if (!ld) return "{}";
     try { return JSON.stringify(JSON.parse(ld.textContent || "{}")); } catch(e) { return "{}"; }
-  })()`).catch(() => "{}");
-  try { return JSON.parse(raw); } catch { return null; }
+  })()`,
+    )
+    .catch(() => "{}");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** 从 DOM 中提取可见的论文信息。 */
 async function extractDOMDetail(browser: PlaywrightAdapter): Promise<Record<string, any>> {
-  const raw = await browser.executeScript<string>(`(() => {
+  const raw = await browser
+    .executeScript<string>(
+      `(() => {
     var r = {};
     var txt = document.body.innerText || "";
     r._bodyPreview = txt.slice(0, 3000);
@@ -584,6 +639,12 @@ async function extractDOMDetail(browser: PlaywrightAdapter): Promise<Record<stri
       }
     }
     return JSON.stringify(r);
-  })()`).catch(() => "{}");
-  try { return JSON.parse(raw); } catch { return {}; }
+  })()`,
+    )
+    .catch(() => "{}");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }

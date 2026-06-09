@@ -6,11 +6,24 @@ export class FingerprintMiddleware implements ICrawlMiddleware {
   readonly name = "Fingerprint";
   private readonly fp = new RealisticFingerprintProvider();
 
-  constructor(private getReferer: (url: string) => string = (url) => { try { return new URL(url).origin + "/"; } catch { return ""; } }) {}
+  constructor(
+    private getReferer: (url: string) => string = (url) => {
+      try {
+        return new URL(url).origin + "/";
+      } catch {
+        return "";
+      }
+    },
+  ) {}
 
   async process(ctx: CrawlContext, next: () => Promise<CrawlResult>): Promise<CrawlResult> {
     const fingerprint = this.fp.getFingerprint();
-    const cookieStr = (ctx.session?.cookies ?? []).map((c) => `${c.name}=${c.value}`).join("; ");
+    // 只保留与目标域名匹配的 Cookie，避免 header 过大（>8KB 会被 CDN 拒绝）
+    const targetDomain = new URL(ctx.url).hostname;
+    const cookieStr = (ctx.session?.cookies ?? [])
+      .filter((c) => !c.domain || targetDomain.includes(c.domain.replace(/^\./, "")))
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
     const baseHeaders = buildBrowserHeaders(fingerprint, this.getReferer(ctx.url));
     Object.assign(ctx.headers, baseHeaders);
     if (cookieStr) ctx.headers["Cookie"] = cookieStr;

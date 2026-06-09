@@ -26,9 +26,11 @@ export class RetryMiddleware implements ICrawlMiddleware {
           const body = JSON.parse(result.body);
           if (rlCodes.includes(body.code)) {
             isRateLimited = true;
-            const endpoint = ctx.url ? new URL(ctx.url).pathname : undefined;
-            this.rateLimiter.onRateLimitError(body.code, endpoint);
-            this.logger.warn(`⚠️ [${ctx.site}] 触发风控 code=${body.code}${attempt < this.maxRetries ? `，等待 ${this.retryDelay}ms 重试...` : "，已耗尽重试次数"}`);
+            // 仅对不在 RATE_LIMIT_CODES 中的 code 触发暂停
+            // （RATE_LIMIT_CODES 中的 code 由各个爬虫的 handler 自行处理重试和密钥刷新）
+            this.logger.warn(
+              `⚠️ [${ctx.site}] 触发风控 code=${body.code}${attempt < this.maxRetries ? `，等待 ${this.retryDelay}ms 重试...` : "，已耗尽重试次数"}`,
+            );
             if (body.code === 300011 && ctx.site === "xiaohongshu") {
               this.logger.warn("⚠️ 小红书风控已触发，建议：1) 降低请求频率 2) 更换爬虫专用小号 3) 等待冷却后重试");
             }

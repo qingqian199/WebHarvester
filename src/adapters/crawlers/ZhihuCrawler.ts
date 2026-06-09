@@ -1,13 +1,16 @@
 import { CrawlerSession, PageData, FetchOptions } from "../../core/ports/ISiteCrawler";
 import { IProxyProvider } from "../../core/ports/IProxyProvider";
 import { generateZse96, generateApiVersion } from "../../utils/crypto/zhihu-signer";
+import { buildCookieHeader } from "../../utils/cookie-helper";
 import { UnitResult } from "../../core/models/ContentUnit";
 import { resolveZhihuUrl } from "../../utils/url-resolver";
 import { buildBrowserHeaders } from "../../utils/browser-env";
 import { BaseCrawler } from "./BaseCrawler";
 
 export const ZhihuFallbackEndpoints: ReadonlyArray<{
-  name: string; pageUrl: string; dataPath: string;
+  name: string;
+  pageUrl: string;
+  dataPath: string;
 }> = [
   { name: "知乎搜索", pageUrl: "https://www.zhihu.com/search?type=content&q={keyword}", dataPath: "search.entries" },
   { name: "用户主页", pageUrl: "https://www.zhihu.com/people/{member_id}", dataPath: "user.profile" },
@@ -33,7 +36,12 @@ export const ZhihuApiEndpoints: ReadonlyArray<ZhihuEndpointDef> = [
   { name: "热门搜索", path: "/api/v4/search/hot_search", status: "verified" },
 
   // ✅ 采集结果确认参数，签名已验证通过
-  { name: "专栏文章推荐", path: "/api/articles/{article_id}/recommendation", params: "include=data%5B*%5D.article.column&limit=5", status: "verified" },
+  {
+    name: "专栏文章推荐",
+    path: "/api/articles/{article_id}/recommendation",
+    params: "include=data%5B*%5D.article.column&limit=5",
+    status: "verified",
+  },
   { name: "关注关系", path: "/api/v4/members/{member_id}/relations/mutuals", params: "include=data%5B*%5D.answer_count&limit=5", status: "verified" },
   { name: "搜索预设词", path: "/api/v4/search/preset_words", status: "verified" },
   { name: "文章关系", path: "/api/v4/articles/{article_id}/relationship", params: "desktop=true", status: "verified" },
@@ -59,7 +67,10 @@ export class ZhihuCrawler extends BaseCrawler {
   readonly name = "zhihu";
   readonly domain = ZHIHU_DOMAIN;
 
-  constructor(proxyProvider?: IProxyProvider) { super("zhihu", proxyProvider); this.registerHandlers(); }
+  constructor(proxyProvider?: IProxyProvider) {
+    super("zhihu", proxyProvider);
+    this.registerHandlers();
+  }
 
   private registerHandlers(): void {
     this.unitHandlers.set("zhihu_user_info", async (unit, params, session) => {
@@ -88,7 +99,13 @@ export class ZhihuCrawler extends BaseCrawler {
       }
       const r = await this.fetchApi("热门搜索", {}, session);
       const d = JSON.parse(r.body);
-      return { unit, status: d.code === 0 || r.statusCode === 200 ? "success" : "partial", data: d, method: "signature", responseTime: r.responseTime };
+      return {
+        unit,
+        status: d.code === 0 || r.statusCode === 200 ? "success" : "partial",
+        data: d,
+        method: "signature",
+        responseTime: r.responseTime,
+      };
     });
 
     this.unitHandlers.set("zhihu_comments", async (unit, params, session) => {
@@ -108,9 +125,17 @@ export class ZhihuCrawler extends BaseCrawler {
             if (d.paging?.is_end) break;
             cursor = d.paging?.next || "";
           } else break;
-        } catch { break; }
+        } catch {
+          break;
+        }
       }
-      return { unit, status: allComments.length > 0 ? "success" : "partial", data: { data: allComments, paging: { totals: allComments.length } }, method: "signature", responseTime: totalTime };
+      return {
+        unit,
+        status: allComments.length > 0 ? "success" : "partial",
+        data: { data: allComments, paging: { totals: allComments.length } },
+        method: "signature",
+        responseTime: totalTime,
+      };
     });
 
     this.unitHandlers.set("zhihu_sub_replies", async (unit, params, session, _authMode, results) => {
@@ -124,9 +149,11 @@ export class ZhihuCrawler extends BaseCrawler {
         rootItems = [{ id: root }];
       } else {
         const commentsResult: any = results?.find((r) => r.unit === "zhihu_comments" && r.status === "success");
-        if (!commentsResult) return { unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「回答评论」", responseTime: 0 };
+        if (!commentsResult)
+          return { unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「回答评论」", responseTime: 0 };
         rootItems = commentsResult.data?.data || [];
-        if (rootItems.length === 0) return { unit, status: "success", data: { data: [], paging: { totals: 0 } }, method: "signature", responseTime: 0 };
+        if (rootItems.length === 0)
+          return { unit, status: "success", data: { data: [], paging: { totals: 0 } }, method: "signature", responseTime: 0 };
       }
 
       const traverseResult = await this.traverseSubReplies(rootItems, {
@@ -149,7 +176,8 @@ export class ZhihuCrawler extends BaseCrawler {
       });
 
       return {
-        unit, status: "success",
+        unit,
+        status: "success",
         data: { data: traverseResult.byRpid, paging: { totals: traverseResult.totalReplies } },
         method: "signature",
         responseTime: traverseResult.totalTime,
@@ -167,14 +195,14 @@ export class ZhihuCrawler extends BaseCrawler {
   }
 
   async fetch(url: string, session?: CrawlerSession, options?: FetchOptions): Promise<PageData> {
-    const cookieStr = (session?.cookies ?? []).map((c) => `${c.name}=${c.value}`).join("; ");
+    const cookieStr = buildCookieHeader(session?.cookies, url);
     const fp = this.fp.getFingerprint();
     const parsed = new URL(url);
     const baseHeaders = buildBrowserHeaders(fp, "https://www.zhihu.com/");
     const headers: Record<string, string> = {
       ...baseHeaders,
-      "Referer": "https://www.zhihu.com/",
-      "Origin": "https://www.zhihu.com",
+      Referer: "https://www.zhihu.com/",
+      Origin: "https://www.zhihu.com",
       "x-api-version": generateApiVersion(),
       "x-zse-96": generateZse96(parsed.pathname, parsed.search.replace("?", "")),
       ...(cookieStr ? { Cookie: cookieStr } : {}),
@@ -185,7 +213,14 @@ export class ZhihuCrawler extends BaseCrawler {
     const start = Date.now();
     const res = await fetch(url, { method, headers, ...(method === "POST" && options?.body ? { body: options.body } : {}) });
     const responseTime = Date.now() - start;
-    return { url: res.url, statusCode: res.status, body: await res.text(), headers: Object.fromEntries(res.headers), responseTime, capturedAt: new Date().toISOString() };
+    return {
+      url: res.url,
+      statusCode: res.status,
+      body: await res.text(),
+      headers: Object.fromEntries(res.headers),
+      responseTime,
+      capturedAt: new Date().toISOString(),
+    };
   }
 
   async fetchApi(endpointName: string, params?: Record<string, string>, session?: CrawlerSession): Promise<PageData> {
@@ -199,7 +234,7 @@ export class ZhihuCrawler extends BaseCrawler {
       }
     }
 
-    const query = ep.params && params ? this.fillParams(ep.params, params) : ep.params ?? "";
+    const query = ep.params && params ? this.fillParams(ep.params, params) : (ep.params ?? "");
     // 专栏相关端点走 zhuanlan.zhihu.com
     const baseHost = ep.path.startsWith("/api/articles") ? "zhuanlan.zhihu.com" : "www.zhihu.com";
     const url = `https://${baseHost}${apiPath}${query ? "?" + query : ""}`;
@@ -223,12 +258,19 @@ export class ZhihuCrawler extends BaseCrawler {
       await browser.executeScript("window.scrollTo(0, " + (200 + Math.floor(Math.random() * 600)) + ")").catch(() => {});
       await new Promise((r) => setTimeout(r, 500));
       const title = await browser.executeScript<string>("document.title").catch(() => "");
-      const bodyText = await browser.executeScript<string>(
-        "(() => { const m = document.querySelector('.RichText'); return m ? m.innerText.slice(0,5000) : document.body.innerText.slice(0,5000); })()",
-      ).catch(() => "");
-      return { url, statusCode: 200, body: JSON.stringify({ title, content: bodyText }),
+      const bodyText = await browser
+        .executeScript<string>(
+          "(() => { const m = document.querySelector('.RichText'); return m ? m.innerText.slice(0,5000) : document.body.innerText.slice(0,5000); })()",
+        )
+        .catch(() => "");
+      return {
+        url,
+        statusCode: 200,
+        body: JSON.stringify({ title, content: bodyText }),
         headers: { "content-type": "application/json;charset=utf-8" },
-        responseTime: Date.now() - startTime, capturedAt: new Date().toISOString() };
+        responseTime: Date.now() - startTime,
+        capturedAt: new Date().toISOString(),
+      };
     } finally {
       await browser.close();
     }
@@ -247,21 +289,47 @@ export class ZhihuCrawler extends BaseCrawler {
     }
     const results: UnitResult[] = [];
 
-    const shuffled = [...units];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
     const paused = this.rateLimiter.isPaused;
     if (paused) this.logger.warn("⏸️ [zhihu] 站点冷却中，后续采集将降级到页面提取");
 
-    for (const unit of shuffled) {
+    // zhihu_sub_replies 依赖 zhihu_comments 的结果
+    const dependentUnits = ["zhihu_sub_replies"];
+    const independent = units.filter((u) => !dependentUnits.includes(u));
+    const dependent = units.filter((u) => dependentUnits.includes(u));
+
+    // 并行执行独立单元
+    const indTasks = independent.map(async (unit) => {
+      const start = Date.now();
+      try {
+        return await this.dispatchUnit(unit, params, session, undefined, results);
+      } catch (e: unknown) {
+        return {
+          unit,
+          status: "failed" as const,
+          data: null,
+          method: "none" as const,
+          error: e instanceof Error ? e.message : String(e),
+          responseTime: Date.now() - start,
+        };
+      }
+    });
+    const indResults = await Promise.all(indTasks);
+    results.push(...indResults);
+
+    // 串行执行依赖单元
+    for (const unit of dependent) {
       const start = Date.now();
       try {
         results.push(await this.dispatchUnit(unit, params, session, undefined, results));
       } catch (e: unknown) {
-        results.push({ unit, status: "failed", data: null, method: "none", error: e instanceof Error ? e.message : String(e), responseTime: Date.now() - start });
+        results.push({
+          unit,
+          status: "failed" as const,
+          data: null,
+          method: "none" as const,
+          error: e instanceof Error ? e.message : String(e),
+          responseTime: Date.now() - start,
+        });
       }
     }
     return results;

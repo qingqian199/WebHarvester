@@ -19,7 +19,9 @@ export interface BiliEndpointDef {
 }
 
 export const BiliFallbackEndpoints: ReadonlyArray<{
-  name: string; pageUrl: string; dataPath: string;
+  name: string;
+  pageUrl: string;
+  dataPath: string;
 }> = [
   { name: "B站搜索", pageUrl: "https://search.bilibili.com/all?keyword={keyword}", dataPath: "search.videos" },
   { name: "用户视频列表", pageUrl: "https://space.bilibili.com/{mid}/video", dataPath: "user.videos" },
@@ -27,15 +29,21 @@ export const BiliFallbackEndpoints: ReadonlyArray<{
 ];
 
 export const BiliApiEndpoints: ReadonlyArray<BiliEndpointDef> = [
-  { name: "视频信息", path: "/x/web-interface/view", needWbi: false, params: "aid={aid}", status: "verified" },
+  { name: "视频信息", path: "/x/web-interface/view", needWbi: false, params: "aid={aid}&bvid={bvid}", status: "verified" },
   { name: "视频详情(wbi)", path: "/x/web-interface/wbi/view/detail", needWbi: true, params: "aid={aid}&need_view=1", status: "verified" },
   { name: "弹幕列表", path: "/x/v2/dm/web/view", params: "oid=37660265907&type=1", status: "verified" },
   { name: "字幕信息", path: "/x/v2/subtitle/web/view", params: "oid=37660265907", status: "verified" },
   { name: "直播间信息", path: "/xlive/web-room/v1/index/getRoomBaseInfo", params: "uids=173323339&req_biz=video", status: "verified" },
-  { name: "视频评论", path: "/x/v2/reply/main", params: "oid={oid}&type=1&mode=3&ps=20", status: "verified" },
-  { name: "视频子回复", path: "/x/v2/reply", params: "oid={oid}&type=1&root={root}&ps=20", status: "verified" },
+  { name: "视频评论", path: "/x/v2/reply/main", needWbi: true, params: "oid={oid}&type=1&mode=3&ps=20", status: "verified" },
+  { name: "视频子回复", path: "/x/v2/reply", needWbi: true, params: "oid={oid}&type=1&root={root}&ps=20", status: "verified" },
   { name: "搜索综合", path: "/x/web-interface/wbi/search/all/v2", needWbi: true, params: "keyword=%E5%8E%9F%E7%A5%9E&page=1", status: "verified" },
-  { name: "搜索 type", path: "/x/web-interface/wbi/search/type", needWbi: true, params: "keyword=%E5%8E%9F%E7%A5%9E&search_type=video&page=1", status: "verified" },
+  {
+    name: "搜索 type",
+    path: "/x/web-interface/wbi/search/type",
+    needWbi: true,
+    params: "keyword=%E5%8E%9F%E7%A5%9E&search_type=video&page=1",
+    status: "verified",
+  },
   { name: "弹幕数据(分段)", path: "/x/v2/dm/wbi/web/seg.so", needWbi: true, params: "oid={oid}&type=1&segment_index=1", status: "verified" },
   { name: "用户空间信息", path: "/x/space/wbi/acc/info", needWbi: true, params: "mid=316627722", status: "sig_pending" },
   { name: "用户投稿", path: "/x/space/wbi/arc/search", needWbi: true, params: "mid=PLACEHOLDER&ps=5&pn=1", status: "sig_pending" },
@@ -80,6 +88,25 @@ export class BilibiliCrawler extends BaseCrawler {
 
   private registerHandlers(): void {
     this.unitHandlers.set("bili_video_info", async (unit, params, session) => {
+      // BVID → AID 转换（BVID 格式如 BV1xx，AID 为数字）
+      if (!params.aid && params.bvid) {
+        try {
+          const r = await this.fetchApi("视频信息", { aid: "", bvid: params.bvid }, session);
+          const d = JSON.parse(r.body) as Record<string, unknown>;
+          if (d.code === 0 && (d.data as any)?.aid) {
+            params.aid = String((d.data as any).aid);
+            this.logger.info(`🔗 BVID ${params.bvid} → AID ${params.aid}`);
+          }
+        } catch {
+          this.logger.warn("⚠️ BVID 解析失败");
+        }
+      }
+      if (!params.aid && params.bvid) {
+        this.logger.warn("⚠️ 无法解析 BVID，尝试从 BVID 参数中提取 aid");
+        // 某些 BVID 可以直接传给基础 API
+        params.aid = params.bvid;
+      }
+
       // 优先使用 WBI 签名的视频详情端（含标签、相关视频、合集等丰富数据）
       let data: Record<string, unknown> | null = null;
       let method = "signature";
@@ -90,15 +117,19 @@ export class BilibiliCrawler extends BaseCrawler {
           const r = await this.fetchApi("视频详情(wbi)", { aid: params.aid }, session);
           const d = JSON.parse(r.body) as Record<string, unknown>;
           responseTime = r.responseTime;
-          if (d.code === 0) { data = d; }
-          else if (d.code === -352) {
+          if (d.code === 0) {
+            data = d;
+          } else if (d.code === -352) {
             this.logger.warn("⚠️ B站 WBI 签名 -352，强制刷新密钥并重试...");
             await this.wbiKeyManager.refresh();
             const r2 = await this.fetchApi("视频详情(wbi)", { aid: params.aid }, session);
             const d2 = JSON.parse(r2.body) as Record<string, unknown>;
             responseTime += r2.responseTime;
-            if (d2.code === 0) { data = d2; }
-            else { this.logger.warn("⚠️ B站 WBI 重试仍失败，降级到基础端点"); }
+            if (d2.code === 0) {
+              data = d2;
+            } else {
+              this.logger.warn("⚠️ B站 WBI 重试仍失败，降级到基础端点");
+            }
           }
         } catch {
           this.logger.warn("⚠️ 视频详情(wbi) 端点异常，降级到基础端点");
@@ -111,16 +142,32 @@ export class BilibiliCrawler extends BaseCrawler {
           const r = await this.fetchApi("视频信息", { aid: params.aid || "" }, session);
           const d = JSON.parse(r.body) as Record<string, unknown>;
           responseTime = r.responseTime;
-          if (d.code === 0) { data = d; method = "signature"; }
-          else if (d.code === -352) {
+          if (d.code === 0) {
+            data = d;
+            method = "signature";
+          } else if (d.code === -352) {
             this.logger.warn("⚠️ B站基础 API 签名 -352，降级到页面提取");
             const pr = await this.fetchPageData("视频详情", { bvid: params.bvid || params.aid || "" }, session);
-            return { unit, status: "partial", data: JSON.parse(pr.body) as Record<string, unknown>, method: "html_extract", responseTime: pr.responseTime, error: "签名风控，降级到页面提取" };
+            return {
+              unit,
+              status: "partial",
+              data: JSON.parse(pr.body) as Record<string, unknown>,
+              method: "html_extract",
+              responseTime: pr.responseTime,
+              error: "签名风控，降级到页面提取",
+            };
           }
         } catch {
           this.logger.warn("⚠️ 基础 API 端点异常，降级到页面提取");
           const pr = await this.fetchPageData("视频详情", { bvid: params.bvid || params.aid || "" }, session);
-          return { unit, status: "partial", data: JSON.parse(pr.body) as Record<string, unknown>, method: "html_extract", responseTime: pr.responseTime, error: "API 异常，降级到页面提取" };
+          return {
+            unit,
+            status: "partial",
+            data: JSON.parse(pr.body) as Record<string, unknown>,
+            method: "html_extract",
+            responseTime: pr.responseTime,
+            error: "API 异常，降级到页面提取",
+          };
         }
       }
 
@@ -136,7 +183,24 @@ export class BilibiliCrawler extends BaseCrawler {
         if (detail.View && typeof detail.View === "object") {
           const view = detail.View as Record<string, unknown>;
           // 基础信息
-          for (const field of ["bvid", "aid", "title", "desc", "pic", "tname", "tid", "videos", "duration", "pubdate", "ctime", "copyright", "mid", "mission_id", "dimension", "dynamic"]) {
+          for (const field of [
+            "bvid",
+            "aid",
+            "title",
+            "desc",
+            "pic",
+            "tname",
+            "tid",
+            "videos",
+            "duration",
+            "pubdate",
+            "ctime",
+            "copyright",
+            "mid",
+            "mission_id",
+            "dimension",
+            "dynamic",
+          ]) {
             if (view[field] !== undefined) enriched[field] = view[field];
           }
           // 嵌套对象
@@ -177,7 +241,11 @@ export class BilibiliCrawler extends BaseCrawler {
     });
     this.unitHandlers.set("bili_search", async (unit, params, session) => {
       try {
-        const r = await this.fetchApi("搜索 type", { keyword: params.keyword || "", search_type: "video", order: params.sort || "totalrank", page: "1" }, session);
+        const r = await this.fetchApi(
+          "搜索 type",
+          { keyword: params.keyword || "", search_type: "video", order: params.sort || "totalrank", page: "1" },
+          session,
+        );
         const d: BiliSearchResult = JSON.parse(r.body);
         if (d.code === 0) return { unit, status: "success", data: d, method: "signature", responseTime: r.responseTime };
       } catch {}
@@ -191,9 +259,17 @@ export class BilibiliCrawler extends BaseCrawler {
       try {
         const r = await this.fetchApi("用户投稿", { mid: params.mid || "", ps: "50", pn: "1" }, session);
         const d: BiliUserVideos = JSON.parse(r.body);
-        if (d.code === 0) { data = d; method = "signature"; respTime = r.responseTime; }
+        if (d.code === 0) {
+          data = d;
+          method = "signature";
+          respTime = r.responseTime;
+        }
       } catch {}
-      if (!data) { const r = await this.fetchPageData("用户视频列表", { mid: params.mid || "" }, session); data = JSON.parse(r.body); respTime = r.responseTime; }
+      if (!data) {
+        const r = await this.fetchPageData("用户视频列表", { mid: params.mid || "" }, session);
+        data = JSON.parse(r.body);
+        respTime = r.responseTime;
+      }
       return { unit, status: "success", data, method, responseTime: respTime };
     });
     this.unitHandlers.set("bili_video_comments", async (unit, params, session) => {
@@ -212,15 +288,29 @@ export class BilibiliCrawler extends BaseCrawler {
           const r2 = await this.fetchApi("视频评论", { oid, next: String(nextCursor) }, session);
           const d2: BiliComments = JSON.parse(r2.body);
           totalTime += r2.responseTime;
-          if (d2.code === 0 && d2.data?.replies) { allReplies = allReplies.concat(d2.data.replies); if (d2.data.cursor?.is_end) break; nextCursor = d2.data.cursor?.next ?? 0; } else break;
+          if (d2.code === 0 && d2.data?.replies) {
+            allReplies = allReplies.concat(d2.data.replies);
+            if (d2.data.cursor?.is_end) break;
+            nextCursor = d2.data.cursor?.next ?? 0;
+          } else break;
           continue;
         }
         totalTime += r.responseTime;
-        if (d.code === 0 && d.data?.replies) { allReplies = allReplies.concat(d.data.replies); if (d.data.cursor?.is_end) break; nextCursor = d.data.cursor?.next ?? 0; } else break;
+        if (d.code === 0 && d.data?.replies) {
+          allReplies = allReplies.concat(d.data.replies);
+          if (d.data.cursor?.is_end) break;
+          nextCursor = d.data.cursor?.next ?? 0;
+        } else break;
       }
       const { data: deduped, deduped_count } = this.dedupComments(allReplies);
       const cleanReplies = deduped.map((r: any) => ({ ...r, type: "main" as const, member: r.member ? { ...r.member } : undefined }));
-      return { unit, status: "success", data: { code: 0, data: { replies: cleanReplies, cursor: { all_count: deduped.length, deduped_count } } }, method: "signature", responseTime: totalTime };
+      return {
+        unit,
+        status: "success",
+        data: { code: 0, data: { replies: cleanReplies, cursor: { all_count: deduped.length, deduped_count } } },
+        method: "signature",
+        responseTime: totalTime,
+      };
     });
     this.unitHandlers.set("bili_video_sub_replies", async (unit, params, session, _authMode, results) => {
       const oid = params.oid || params.aid || "";
@@ -228,34 +318,76 @@ export class BilibiliCrawler extends BaseCrawler {
       const maxSubReplies = Math.min(parseInt(params.max_sub_reply_pages || "5"), 20);
       const root = params.root || "";
       let rootItems: any[];
-      if (root) { rootItems = [{ rpid: root }]; } else {
+      if (root) {
+        rootItems = [{ rpid: root }];
+      } else {
         const cr = results?.find((r) => r.unit === "bili_video_comments" && r.status === "success");
-        if (!cr) return { unit, status: "failed", data: null, method: "none", error: "自动展开子回复需要先勾选「视频评论」采集单元，或手动提供 root 参数", responseTime: 0 };
+        if (!cr)
+          return {
+            unit,
+            status: "failed",
+            data: null,
+            method: "none",
+            error: "自动展开子回复需要先勾选「视频评论」采集单元，或手动提供 root 参数",
+            responseTime: 0,
+          };
         const cd = cr.data as BiliComments | undefined;
         rootItems = cd?.data?.replies || [];
-        if (rootItems.length === 0) return { unit, status: "success", data: { code: 0, data: { comments: {}, total_replies: 0, expanded_count: 0 } }, method: "signature", responseTime: 0 };
+        if (rootItems.length === 0)
+          return {
+            unit,
+            status: "success",
+            data: { code: 0, data: { comments: {}, total_replies: 0, expanded_count: 0 } },
+            method: "signature",
+            responseTime: 0,
+          };
         if (rootItems.length > 100) this.logger.warn(`⚠️ 一级评论共 ${rootItems.length} 条，子回复展开量可能较大，限制展开前 100 条`);
       }
       const tr = await this.traverseSubReplies(rootItems, {
-        rootIdExtractor: (item: any) => String(item.rpid), maxPages: maxSubReplies, staggerMs: 500,
+        rootIdExtractor: (item: any) => String(item.rpid),
+        maxPages: maxSubReplies,
+        staggerMs: 500,
         fetchPage: async (rid, cur) => {
           const r = await this.fetchApi("视频子回复", { oid, root: String(rid), next: String(cur) }, session);
           const d = JSON.parse(r.body);
-          if (d.code === 0 && d.data?.replies?.length) return { replies: d.data.replies, hasMore: !(d.data.cursor?.is_end ?? true), nextCursor: d.data.cursor?.next ?? 0, responseTime: r.responseTime };
+          if (d.code === 0 && d.data?.replies?.length)
+            return {
+              replies: d.data.replies,
+              hasMore: !(d.data.cursor?.is_end ?? true),
+              nextCursor: d.data.cursor?.next ?? 0,
+              responseTime: r.responseTime,
+            };
           return { replies: [], hasMore: false, nextCursor: 0, responseTime: 0 };
         },
         postProcess: (replies, rid) => {
           const { data: deduped } = this.dedupComments(replies as any);
-          return { replies: deduped.map((r: any) => ({ ...r, type: "sub" as const, parent_rpid: Number(rid), member: r.member ? { ...r.member } : undefined })) as any };
+          return {
+            replies: deduped.map((r: any) => ({
+              ...r,
+              type: "sub" as const,
+              parent_rpid: Number(rid),
+              member: r.member ? { ...r.member } : undefined,
+            })) as any,
+          };
         },
       });
       this.logger.info(`✅ 子回复展开完成: ${tr.expandedCount} 条评论有回复，共 ${tr.totalReplies} 条`);
-      return { unit, status: "success", data: { code: 0, data: { comments: tr.byRpid, total_replies: tr.totalReplies, expanded_count: tr.expandedCount } }, method: "signature", responseTime: tr.totalTime };
+      return {
+        unit,
+        status: "success",
+        data: { code: 0, data: { comments: tr.byRpid, total_replies: tr.totalReplies, expanded_count: tr.expandedCount } },
+        method: "signature",
+        responseTime: tr.totalTime,
+      };
     });
   }
 
   matches(url: string): boolean {
-    try { return new URL(url).hostname.includes(BILI_DOMAIN); } catch { return false; }
+    try {
+      return new URL(url).hostname.includes(BILI_DOMAIN);
+    } catch {
+      return false;
+    }
   }
 
   protected getReferer(url: string): string {
@@ -283,10 +415,13 @@ export class BilibiliCrawler extends BaseCrawler {
 
     if (ep.needWbi) {
       const paramObj: Record<string, string> = {};
-      query.split("&").filter(Boolean).forEach((pair) => {
-        const [k, v] = pair.split("=");
-        if (k) paramObj[k] = decodeURIComponent(v);
-      });
+      query
+        .split("&")
+        .filter(Boolean)
+        .forEach((pair) => {
+          const [k, v] = pair.split("=");
+          if (k) paramObj[k] = decodeURIComponent(v);
+        });
       const { img_key, sub_key } = await this.wbiKeyManager.getKeys();
       query = buildSignedQuery(paramObj, img_key, sub_key);
     }
@@ -307,7 +442,8 @@ export class BilibiliCrawler extends BaseCrawler {
       const title = await browser.executeScript<string>("document.title").catch(() => "");
       const bodyText = await browser.executeScript<string>("document.body.innerText.slice(0, 5000)").catch(() => "");
       return {
-        url, statusCode: 200,
+        url,
+        statusCode: 200,
         body: JSON.stringify({ title, content: bodyText }),
         headers: { "content-type": "application/json;charset=utf-8" },
         responseTime: Date.now() - startTime,
@@ -318,7 +454,12 @@ export class BilibiliCrawler extends BaseCrawler {
     }
   }
 
-  private async fetchSubRepliesForRpid(oid: string, rpid: string, session?: CrawlerSession, maxPages = 5): Promise<{ replies: BiliCommentItem[]; all_count: number; subReplyTime: number }> {
+  private async fetchSubRepliesForRpid(
+    oid: string,
+    rpid: string,
+    session?: CrawlerSession,
+    maxPages = 5,
+  ): Promise<{ replies: BiliCommentItem[]; all_count: number; subReplyTime: number }> {
     let allReplies: BiliCommentItem[] = [];
     let totalTime = 0;
     let nextCursor = 0;
@@ -344,7 +485,7 @@ export class BilibiliCrawler extends BaseCrawler {
       if (params.bvid && !params.aid) {
         try {
           const r = await fetch("https://api.bilibili.com/x/web-interface/view?bvid=" + params.bvid);
-          const d = await r.json() as any;
+          const d = (await r.json()) as Record<string, any>;
           if (d.data?.aid) params.aid = String(d.data.aid);
           if (d.data?.owner?.mid) params.mid = String(d.data.owner.mid);
         } catch {}
@@ -352,23 +493,44 @@ export class BilibiliCrawler extends BaseCrawler {
     }
     const results: UnitResult[] = [];
 
+    // 依赖单元必须串行，独立单元并行执行
     const dependentUnits = ["bili_video_sub_replies"];
     const independent = units.filter((u) => !dependentUnits.includes(u));
-    for (let i = independent.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [independent[i], independent[j]] = [independent[j], independent[i]];
-    }
-    const shuffled = [...independent];
-    for (const u of units) {
-      if (dependentUnits.includes(u) && !shuffled.includes(u)) shuffled.push(u);
-    }
+    const dependent = units.filter((u) => dependentUnits.includes(u));
 
-    for (const unit of shuffled) {
+    // 并行执行独立单元
+    const indTasks = independent.map(async (unit) => {
+      const start = Date.now();
+      try {
+        return await this.dispatchUnit(unit, params, session, undefined, results);
+      } catch (e: unknown) {
+        return {
+          unit,
+          status: "failed" as const,
+          data: null,
+          method: "none" as const,
+          error: e instanceof Error ? e.message : String(e),
+          responseTime: Date.now() - start,
+        };
+      }
+    });
+    const indResults = await Promise.all(indTasks);
+    results.push(...indResults);
+
+    // 串行执行依赖单元（需先用独立单元的结果）
+    for (const unit of dependent) {
       const start = Date.now();
       try {
         results.push(await this.dispatchUnit(unit, params, session, undefined, results));
       } catch (e: unknown) {
-        results.push({ unit, status: "failed", data: null, method: "none", error: e instanceof Error ? e.message : String(e), responseTime: Date.now() - start });
+        results.push({
+          unit,
+          status: "failed" as const,
+          data: null,
+          method: "none" as const,
+          error: e instanceof Error ? e.message : String(e),
+          responseTime: Date.now() - start,
+        });
       }
     }
     return results;
