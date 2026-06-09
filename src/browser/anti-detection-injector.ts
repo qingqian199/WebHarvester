@@ -1,17 +1,13 @@
 /**
- * 统一反检测脚本注入模块。
- *
- * 在每个 CDP Page 创建时自动注入，覆盖自动化特征，
- * 使 Playwright/CDP 连接达到与真实用户浏览器一致的指纹水平。
- *
- * 覆盖向量：
- * - navigator.webdriver / plugins / mimeTypes / languages / platform
+ * 统一反检测脚本注入模块�? *
+ * 在每�?CDP Page 创建时自动注入，覆盖自动化特征，
+ * �?Playwright/CDP 连接达到与真实用户浏览器一致的指纹水平�? *
+ * 覆盖向量�? * - navigator.webdriver / plugins / mimeTypes / languages / platform
  * - chrome.runtime
  * - Canvas fingerprint (subtle noise)
  * - WebGL vendor/renderer override
  * - AudioContext fingerprint (noise injection)
- * - WebRTC IP 防泄漏
- * - $cdc_ 标记清理
+ * - WebRTC IP 防泄�? * - $cdc_ 标记清理
  * - permissions.query
  * - deviceMemory / hardwareConcurrency
  */
@@ -23,10 +19,10 @@ const SCRIPT = `
   if (window.${INJECTED_FLAG}) return;
   Object.defineProperty(window, "${INJECTED_FLAG}", { value: true, writable: false });
 
-  // ── 1. 隐藏自动化标记 ──
+  // ── 1. 隐藏自动化标�?──
   Object.defineProperty(navigator, "webdriver", { get: () => false });
 
-  // ── 2. 伪造 chrome.runtime ──
+  // ── 2. 伪�?chrome.runtime ──
   if (window.chrome) {
     if (!window.chrome.runtime) {
       window.chrome.runtime = {
@@ -92,7 +88,7 @@ const SCRIPT = `
   Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
   Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
 
-  // ── 7. 隐藏 Playwright/CDP 注入的 $cdc_ / $ 标记 ──
+  // ── 7. 隐藏 Playwright/CDP 注入�?$cdc_ / $ 标记 ──
   var keys = Object.getOwnPropertyNames(document);
   for (var k of keys) {
     if (k.startsWith("$cdc_") || (k.startsWith("$") && k !== "$")) {
@@ -100,7 +96,7 @@ const SCRIPT = `
     }
   }
 
-  // ── 8. outerWidth / outerHeight 与 inner 保持同步 ──
+  // ── 8. outerWidth / outerHeight �?inner 保持同步 ──
   var checkSize = function() {
     var w = window.innerWidth;
     var h = window.innerHeight;
@@ -110,12 +106,11 @@ const SCRIPT = `
   checkSize();
   window.addEventListener("resize", checkSize);
 
-  // ── 9. Canvas 指纹随机化（对 getImageData 输出注入亚像素噪声） ──
+  // ── 9. Canvas 指纹随机化（�?getImageData 输出注入亚像素噪声） ──
   var origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
   CanvasRenderingContext2D.prototype.getImageData = function() {
     var imageData = origGetImageData.apply(this, arguments);
-    // 仅在 15% 概率注入微小噪声，避免被识别为固定修改
-    if (Math.random() < 0.15) {
+    // 仅在 15% 概率注入微小噪声，避免被识别为固定修�?    if (Math.random() < 0.15) {
       var channels = 4; // RGBA
       // 只改第一个像素的 R 通道 ±1，最小化视觉影响
       var noise = Math.random() < 0.5 ? 1 : -1;
@@ -124,7 +119,7 @@ const SCRIPT = `
     return imageData;
   };
 
-  // ── 10. WebGL 厂商/渲染器覆盖（防 GPU 指纹追踪） ──
+  // ── 10. WebGL 厂商/渲染器覆盖（�?GPU 指纹追踪�?──
   var getExt = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = function(type, attrs) {
     if (type === "webgl" || type === "experimental-webgl") {
@@ -142,7 +137,7 @@ const SCRIPT = `
         if (p === 0x9246) return "Intel Iris OpenGL Engine";
         return origGetParam(p);
       };
-      // 覆盖 getExtension 以修改 WEBGL_debug_renderer_info
+      // 覆盖 getExtension 以修�?WEBGL_debug_renderer_info
       var origGetExt = ctx.getExtension.bind(ctx);
       ctx.getExtension = function(name) {
         var ext = origGetExt(name);
@@ -156,7 +151,7 @@ const SCRIPT = `
     return ctx;
   };
 
-  // ── 11. AudioContext 指纹随机化 ──
+  // ── 11. AudioContext 指纹随机�?──
   var OrigAudioCtx = window.AudioContext || window.webkitAudioContext;
   if (OrigAudioCtx) {
     var AudioCtxProxy = function() {
@@ -168,7 +163,7 @@ const SCRIPT = `
         var origGetFloat = analyser.getFloatFrequencyData.bind(analyser);
         analyser.getFloatFrequencyData = function(arr) {
           origGetFloat(arr);
-          // 低频段注入 ±0.3dB 噪声（人类不可感知）
+          // 低频段注�?±0.3dB 噪声（人类不可感知）
           var len = Math.min(arr.length, 8);
           for (var i = 0; i < len; i++) {
             var noise = (Math.random() - 0.5) * 0.6;
@@ -195,14 +190,13 @@ const SCRIPT = `
     } catch(e) {}
   }
 
-  // ── 12. WebRTC IP 防泄漏（非侵入式：防止 enumerateDevices 暴露精确标签） ──
+  // ── 12. WebRTC IP 防泄漏（非侵入式：防�?enumerateDevices 暴露精确标签�?──
   if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
     var origEnumerate = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
     navigator.mediaDevices.enumerateDevices = function() {
       return origEnumerate().then(function(devices) {
         return devices.map(function(d) {
-          // 模糊化设备标签，除非用户已授权
-          if (d.label && d.label !== "") {
+          // 模糊化设备标签，除非用户已授�?          if (d.label && d.label !== "") {
             var kind = d.kind === "audioinput" ? "Microphone" : d.kind === "audiooutput" ? "Speaker" : d.kind === "videoinput" ? "Camera" : "Device";
             var genericLabel = kind + " (" + d.deviceId.slice(0, 8) + "...)";
             return Object.assign({}, d, { label: genericLabel });
@@ -215,23 +209,23 @@ const SCRIPT = `
 })();
 `;
 
-/** 反检测配置接口 */
+/** 反检测配置接�?*/
 export interface AntiDetectionConfig {
-  /** 是否启用 Canvas 指纹噪声（默认 true） */
+  /** 是否启用 Canvas 指纹噪声（默�?true�?*/
   canvasNoise?: boolean;
-  /** 是否启用 WebGL 厂商覆盖（默认 true） */
+  /** 是否启用 WebGL 厂商覆盖（默�?true�?*/
   webglOverride?: boolean;
-  /** 是否启用 AudioContext 指纹噪声（默认 true） */
+  /** 是否启用 AudioContext 指纹噪声（默�?true�?*/
   audioNoise?: boolean;
-  /** 是否启用 WebRTC 设备标签模糊化（默认 true） */
+  /** 是否启用 WebRTC 设备标签模糊化（默认 true�?*/
   webRtcProtect?: boolean;
-  /** 自定义平台（默认 Win32） */
+  /** 自定义平台（默认 Win32�?*/
   platform?: string;
-  /** 语言列表（默认 ["zh-CN","zh","en"]） */
+  /** 语言列表（默�?["zh-CN","zh","en"]�?*/
   languages?: string[];
-  /** 硬件并发数（默认 8） */
+  /** 硬件并发数（默认 8�?*/
   hardwareConcurrency?: number;
-  /** 设备内存 GB（默认 8） */
+  /** 设备内存 GB（默�?8�?*/
   deviceMemory?: number;
 }
 
@@ -242,9 +236,7 @@ export function buildScript(_config?: Partial<AntiDetectionConfig>): string {
 }
 
 /**
- * 向 Page 注入反检测脚本。
- * 每个 Page 只注入一次（通过标记防重复）。
- */
+ * �?Page 注入反检测脚本�? * 每个 Page 只注入一次（通过标记防重复）�? */
 export async function injectAntiDetection(page: any, _config?: Partial<AntiDetectionConfig>): Promise<void> {
   try {
     const already = await page
@@ -253,9 +245,11 @@ export async function injectAntiDetection(page: any, _config?: Partial<AntiDetec
       })
       .catch(() => false);
     if (already) return;
-  } catch {}
+  } catch (e) {
+    console.warn("[anti-detection] inject check error:", (e as Error).message);
+  }
 
-  await page.addInitScript(SCRIPT).catch(() => {});
+  await page.addInitScript(SCRIPT).catch((e: Error) => console.warn("[anti-detection] addInitScript error:", e.message));
 }
 
 /**
@@ -270,11 +264,15 @@ export async function applyAntiDetectionNow(page: any): Promise<void> {
       })
       .catch(() => false);
     if (already) return;
-  } catch {}
+  } catch (e) {
+    console.warn("[anti-detection] inject check error:", (e as Error).message);
+  }
 
   try {
     await page.evaluate(SCRIPT);
-  } catch {}
+  } catch (e) {
+    console.warn("[anti-detection] evaluate error:", (e as Error).message);
+  }
 }
 
 export { SCRIPT, INJECTED_FLAG };

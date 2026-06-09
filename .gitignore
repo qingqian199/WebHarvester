@@ -16,3 +16,4 @@ captcha_screenshots/
 ts-verify-*.txt
 *.test.ts.snap
 .playwright-mcp/
+tiktok-wasm/

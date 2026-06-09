@@ -17,7 +17,7 @@ export interface TypingOptions {
 }
 
 export interface SessionOptions {
-  /** 是否启用 tabSwitch、resize 等高级行为（默认 false） */
+  /** 是否启用 tabSwitch、resize 等高级行为（默认 false�?*/
   advanced?: boolean;
 }
 
@@ -25,10 +25,16 @@ const DEFAULT_SCROLL: Required<ScrollOptions> = { maxScrolls: 4, distanceRange: 
 const DEFAULT_MOUSE: Required<MouseOptions> = { steps: 8, delayRange: [200, 500] };
 const DEFAULT_TYPING: Required<TypingOptions> = { wpm: 40, typoRate: 0.02 };
 
-function rand(min: number, max: number): number { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function rand(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
 async function safe(page: Page, fn: () => Promise<void>): Promise<void> {
-  try { await fn(); } catch {}
+  try {
+    await fn();
+  } catch (e) {
+    console.warn("[behavior] safe action error:", (e as Error).message);
+  }
 }
 
 // ── 基础模拟 ──
@@ -99,9 +105,7 @@ export async function simulateIdle(duration: number): Promise<void> {
 // ── 高级模拟 ──
 
 /**
- * 模拟拖拽：mousedown → mousemove → mouseup。
- * startSelector / endSelector 可传 CSS 选择器，也可传 {x, y} 坐标。
- */
+ * 模拟拖拽：mousedown �?mousemove �?mouseup�? * startSelector / endSelector 可传 CSS 选择器，也可�?{x, y} 坐标�? */
 export async function simulateDrag(
   page: Page,
   startSelector: string | { x: number; y: number },
@@ -151,9 +155,7 @@ export async function simulateDrag(
 }
 
 /**
- * 模拟 Tab 切换：触发 document.hidden = true → false，
- * 派发 visibilitychange 事件模拟用户切到其他标签再返回。
- */
+ * 模拟 Tab 切换：触�?document.hidden = true �?false�? * 派发 visibilitychange 事件模拟用户切到其他标签再返回�? */
 export async function simulateTabSwitch(page: Page): Promise<void> {
   await safe(page, async () => {
     // 切走
@@ -179,8 +181,7 @@ export async function simulateTabSwitch(page: Page): Promise<void> {
 }
 
 /**
- * 随机改变窗口大小再恢复，模拟用户调节窗口。
- */
+ * 随机改变窗口大小再恢复，模拟用户调节窗口�? */
 export async function simulateResize(page: Page): Promise<void> {
   await safe(page, async () => {
     const orig = page.viewportSize() || { width: 1280, height: 720 };
@@ -194,18 +195,11 @@ export async function simulateResize(page: Page): Promise<void> {
   });
 }
 
-// ── 场景调度器 ──
+// ── 场景调度�?──
 
 /**
- * 场景调度器：根据强度级别执行一组行为模拟。
- * totalDuration 控制在 2~5 秒内。
- * @param advanced 是否启用 tabSwitch / resize 等高级行为（默认 false）
- */
-export async function humanBehaviorSession(
-  page: Page,
-  intensity: "light" | "medium" | "heavy" | "off",
-  options?: SessionOptions,
-): Promise<void> {
+ * 场景调度器：根据强度级别执行一组行为模拟�? * totalDuration 控制�?2~5 秒内�? * @param advanced 是否启用 tabSwitch / resize 等高级行为（默认 false�? */
+export async function humanBehaviorSession(page: Page, intensity: "light" | "medium" | "heavy" | "off", options?: SessionOptions): Promise<void> {
   if (intensity === "off") return;
   const adv = options?.advanced ?? false;
   try {
@@ -236,5 +230,7 @@ export async function humanBehaviorSession(
         await simulateResize(page);
       }
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[behavior] complex simulation error:", (e as Error).message);
+  }
 }

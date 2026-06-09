@@ -16,16 +16,21 @@ function tryExtractPaperDetailFromAny(obj: unknown): Record<string, unknown> | n
     const paper = data.paper || data.paperDetail || data.detail?.paper || data.data?.paper || data.result || data;
     if (paper.paperId || paper.title || paper.authors) {
       const authors = (paper.authors || []).map((a: any) => a.showName || a.name || "").filter(Boolean);
-      const refs = (paper.referenceList || paper.references || []).map((r: any) =>
-        (r.title || r.name || "").replace(/<\/?[^>]+>/g, "")
-      ).filter(Boolean);
-      const citedList = (paper.citedByList || paper.citedList || []).slice(0, 20).map((c: any) =>
-        (c.title || c.name || "").replace(/<\/?[^>]+>/g, "")
-      ).filter(Boolean);
+      const refs = (paper.referenceList || paper.references || [])
+        .map((r: any) => (r.title || r.name || "").replace(/<\/?[^>]+>/g, ""))
+        .filter(Boolean);
+      const citedList = (paper.citedByList || paper.citedList || [])
+        .slice(0, 20)
+        .map((c: any) => (c.title || c.name || "").replace(/<\/?[^>]+>/g, ""))
+        .filter(Boolean);
       return {
         标题: (paper.title || "").replace(/<\/?[^>]+>/g, ""),
         作者: authors.join("; "),
-        作者单位: (paper.authors || []).map((a: any) => a.affiliate || "").filter(Boolean).join("; ") || "无",
+        作者单位:
+          (paper.authors || [])
+            .map((a: any) => a.affiliate || "")
+            .filter(Boolean)
+            .join("; ") || "无",
         发表年份: paper.publishYear || paper.year || "",
         摘要: (paper.abstract || paper.abstractStr || "").replace(/<\/?[^>]+>/g, ""),
         关键词: (paper.keyword || paper.keywords || "").replace(/<\/?[^>]+>/g, ""),
@@ -36,14 +41,15 @@ function tryExtractPaperDetailFromAny(obj: unknown): Record<string, unknown> | n
         期: paper.issue || "",
         页码: paper.pages || paper.pageInfo || "",
         下载量: paper.downloadCount ?? paper.download ?? "无",
-        基金项目: (paper.fundInfo || paper.fund || paper.funding || "无"),
+        基金项目: paper.fundInfo || paper.fund || paper.funding || "无",
         参考文献: refs.length > 0 ? refs.join("\n") : "无",
         作者邮箱: (paper.authorEmails || []).join("; ") || paper.email || "无",
         导师信息: paper.advisor || paper.supervisor || paper.tutor || "无",
         论文分类号: paper.classification || paper.category || paper.classNo || "无",
         原文链接: (paper.pdfList || paper.fulltextList || paper.sourceList || [])
           .filter((s: any) => s.url || s.link)
-          .map((s: any) => (s.url || s.link || "")).join("\n"),
+          .map((s: any) => s.url || s.link || "")
+          .join("\n"),
         引用论文: citedList.length > 0 ? citedList.join("\n") : "无",
       };
     }
@@ -57,7 +63,9 @@ function tryExtractPaperDetailFromAny(obj: unknown): Record<string, unknown> | n
 }
 
 async function scanAllScriptsForPaperData(browser: PlaywrightAdapter): Promise<any> {
-  const raw = await browser.executeScript<string>(`(() => {
+  const raw = await browser
+    .executeScript<string>(
+      `(() => {
     var scripts = document.querySelectorAll("script:not([src])");
     for (var s of scripts) {
       var t = (s.textContent || "").trim();
@@ -74,21 +82,37 @@ async function scanAllScriptsForPaperData(browser: PlaywrightAdapter): Promise<a
       try { if (window[key]) return JSON.stringify(JSON.parse(JSON.stringify(window[key]))); } catch(e) {}
     }
     return "{}";
-  })()`).catch(() => "{}");
-  try { return JSON.parse(raw); } catch { return null; }
+  })()`,
+    )
+    .catch(() => "{}");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 async function checkJSONLD(browser: PlaywrightAdapter): Promise<any> {
-  const raw = await browser.executeScript<string>(`(() => {
+  const raw = await browser
+    .executeScript<string>(
+      `(() => {
     var ld = document.querySelector('script[type="application/ld+json"]');
     if (!ld) return "{}";
     try { return JSON.stringify(JSON.parse(ld.textContent || "{}")); } catch(e) { return "{}"; }
-  })()`).catch(() => "{}");
-  try { return JSON.parse(raw); } catch { return null; }
+  })()`,
+    )
+    .catch(() => "{}");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 async function extractDOMDetail(browser: PlaywrightAdapter): Promise<Record<string, any>> {
-  const raw = await browser.executeScript<string>(`(() => {
+  const raw = await browser
+    .executeScript<string>(
+      `(() => {
     var r = {};
     var txt = document.body.innerText || "";
     r._bodyPreview = txt.slice(0, 3000);
@@ -111,8 +135,14 @@ async function extractDOMDetail(browser: PlaywrightAdapter): Promise<Record<stri
       }
     }
     return JSON.stringify(r);
-  })()`).catch(() => "{}");
-  try { return JSON.parse(raw); } catch { return {}; }
+  })()`,
+    )
+    .catch(() => "{}");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
 
 // ── 策略工厂 ──
@@ -121,15 +151,19 @@ async function extractDOMDetail(browser: PlaywrightAdapter): Promise<Record<stri
 export const ssrStrategy: PaperExtractStrategy = {
   name: "ssr",
   execute: async (browser, _pid) => {
-    const ssrResult = await browser.executeScript<string>(`(() => {
+    const ssrResult = await browser
+      .executeScript<string>(
+        `(() => {
       const r = {}; const is = window.__INITIAL_STATE__;
       if (is) { r._hasInitState = true; r.data = JSON.parse(JSON.stringify(is)); }
       const nd = document.getElementById("__NEXT_DATA__");
-      if (nd) { r._hasNextData = true; try { r.nextData = JSON.parse(nd.textContent || "{}"); } catch {} }
+      if (nd) { r._hasNextData = true; try { r.nextData = JSON.parse(nd.textContent || "{}"); } catch (e) { console.warn("[scholar] nextData parse error:", (e as Error).message) } }
       const nu = document.getElementById("__NUXT_DATA__");
-      if (nu) { r._hasNuxtData = true; try { r.nuxtData = JSON.parse(nu.textContent || "{}"); } catch {} }
+      if (nu) { r._hasNuxtData = true; try { r.nuxtData = JSON.parse(nu.textContent || "{}"); } catch (e) { console.warn("[scholar] nuxtData parse error:", (e as Error).message) } }
       return JSON.stringify(r);
-    })()`).catch(() => "{}");
+    })()`,
+      )
+      .catch(() => "{}");
     const parsed = JSON.parse(ssrResult);
     if (parsed._hasInitState || parsed._hasNextData || parsed._hasNuxtData) {
       const ds = parsed.data || parsed.nextData?.props?.pageProps || parsed.nuxtData;
@@ -163,7 +197,13 @@ export const jsonldStrategy: PaperExtractStrategy = {
       if (jsonld.name) mapped.标题 = jsonld.name;
       if (jsonld.description) mapped.摘要 = jsonld.description;
       if (jsonld.datePublished) mapped.发表年份 = jsonld.datePublished.slice(0, 4);
-      if (jsonld.author) mapped.作者 = Array.isArray(jsonld.author) ? jsonld.author.map((a: any) => a.name || "").filter(Boolean).join("; ") : jsonld.author.name || "";
+      if (jsonld.author)
+        mapped.作者 = Array.isArray(jsonld.author)
+          ? jsonld.author
+              .map((a: any) => a.name || "")
+              .filter(Boolean)
+              .join("; ")
+          : jsonld.author.name || "";
       return mapped;
     }
     return null;
@@ -183,9 +223,4 @@ export const domStrategy: PaperExtractStrategy = {
 };
 
 /** 默认策略链顺序 */
-export const DEFAULT_PAPER_STRATEGIES: PaperExtractStrategy[] = [
-  ssrStrategy,
-  inlineScriptStrategy,
-  jsonldStrategy,
-  domStrategy,
-];
+export const DEFAULT_PAPER_STRATEGIES: PaperExtractStrategy[] = [ssrStrategy, inlineScriptStrategy, jsonldStrategy, domStrategy];

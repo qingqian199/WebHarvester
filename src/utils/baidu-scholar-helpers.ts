@@ -76,7 +76,9 @@ export async function checkCaptcha(browser: PlaywrightAdapter, pid?: string, log
           const filename = `baidu_captcha_${pid || Date.now()}_${Date.now()}.png`;
           await page.screenshot({ path: path.join(dir, filename), fullPage: false });
         }
-      } catch {} // ok: ignored
+      } catch (e) {
+        console.warn("[scholar] captcha screenshot error:", (e as Error).message);
+      }
       logger?.warn("  ⛔ 百度安全验证拦截，请手动打开详情页完成验证后按回车继续");
       logger?.warn("  💡 建议: 使用非 headless 模式 (headless: false) 可大幅降低触发概率");
     }

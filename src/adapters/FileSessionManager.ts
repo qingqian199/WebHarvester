@@ -110,7 +110,9 @@ export class FileSessionManager implements ISessionManager {
     try {
       await fs.access(newDir);
       return false; // 新目录已存在
-    } catch {}
+    } catch (e) {
+      console.warn("[FileSessionManager] migrate check error:", (e as Error).message);
+    }
 
     // 执行迁移
     await fs.mkdir(newDir, { recursive: true });

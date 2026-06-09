@@ -155,7 +155,9 @@ export function registerDiagnosticsTools(server: McpServer, ctx: ToolContext): v
           suggestions.push(
             `WBI 密钥状态: ${wbiStatus.available ? "可用" : "不可用"}, 来源: ${wbiStatus.source}, 缓存: ${wbiStatus.isCached ? "已过期" : "有效"}, 建议: ${wbiStatus.available ? (wbiStatus.isCached ? "执行 trigger_wbi_sync 刷新" : "正常") : "需获取 WBI 密钥"}`,
           );
-        } catch {}
+        } catch {
+          /* ok: 诊断信息可选 */
+        }
       }
 
       if (failedSteps.length === 0 && timeline.overallStatus === "success") {

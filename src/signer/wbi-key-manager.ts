@@ -60,7 +60,9 @@ export class WbiKeyManager {
           this.cache = fileCache;
           return { img_key: fileCache.img_key, sub_key: fileCache.sub_key };
         }
-      } catch {}
+      } catch {
+        /* ok: 文件可能不存在 */
+      }
     }
 
     // 3. 刷新（带并发锁）
@@ -149,7 +151,9 @@ export class WbiKeyManager {
           this.logger.info("✅ 已从文件加载过期密钥继续工作");
           return;
         }
-      } catch {}
+      } catch {
+        /* ok: 无缓存文件 */
+      }
       // 无任何可用缓存：不抛错，让 getKeys 处理降级
       this.logger.error("❌ 无可用 WBI 密钥缓存，后续 WBI 签名请求将降级到无签名端点");
       return;
@@ -175,7 +179,9 @@ export class WbiKeyManager {
             this.logger.info("✅ 已从文件恢复过期密钥继续工作");
             return;
           }
-        } catch {}
+        } catch {
+          /* ok: 缓存降级 */
+        }
         throw new Error(`nav 接口业务异常: ${JSON.stringify(body)}`);
       }
     }
@@ -208,7 +214,9 @@ export class WbiKeyManager {
           this.logger.info("✅ 已从文件恢复过期密钥继续工作");
           return;
         }
-      } catch {}
+      } catch {
+        /* ok: 缓存降级 */
+      }
       throw new Error(`nav 接口未返回 wbi_img 字段: ${JSON.stringify(body).slice(0, 500)}`);
     }
 
@@ -233,7 +241,9 @@ export class WbiKeyManager {
           this.logger.info("✅ 已从文件恢复过期密钥继续工作");
           return;
         }
-      } catch {}
+      } catch {
+        /* ok: 缓存降级 */
+      }
       throw new Error(`WBI 密钥格式异常: img=${img_key?.length ?? 0}, sub=${sub_key?.length ?? 0}, 原始 body=${JSON.stringify(body).slice(0, 500)}`);
     }
 

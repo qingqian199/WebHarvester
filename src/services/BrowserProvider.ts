@@ -58,7 +58,11 @@ export async function getBrowser(site: string, preferCDP = false): Promise<Brows
 export async function unregisterCdpBrowser(): Promise<void> {
   BrowserPool.deletePoolEntry(CDP_SITE_KEY);
   if (cdpBrowser) {
-    try { await cdpBrowser.close(); } catch {}
+    try {
+      await cdpBrowser.close();
+    } catch (e) {
+      console.warn("[BrowserProvider] CDP close error:", (e as Error).message);
+    }
     cdpBrowser = null;
     cdpContext = null;
   }
