@@ -6,7 +6,9 @@ const CACHE_PATH = path.resolve("sessions/wbi_keys.json");
 
 beforeEach(async () => {
   // 确保每次测试前清除缓存文件
-  try { await fs.unlink(CACHE_PATH); } catch {}
+  try {
+    await fs.unlink(CACHE_PATH);
+  } catch {}
 });
 
 describe("WbiKeyManager", () => {
@@ -85,10 +87,13 @@ describe("WbiKeyManager", () => {
       const mgr = new WbiKeyManager();
       // 先注入缓存
       await mgr.setKeys("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-      // 手动触发刷新（会失败因为无网络），但内存缓存应保留
+      // 模拟 fetch 失败，验证旧缓存保留
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = () => Promise.reject(new Error("模拟网络失败"));
       try {
         await (mgr as any).doRefresh();
       } catch {}
+      globalThis.fetch = origFetch;
       const status = mgr.getStatus();
       expect(status.available).toBe(true);
       // 原始缓存应保留（即使 refresh 抛错也不应清空）
