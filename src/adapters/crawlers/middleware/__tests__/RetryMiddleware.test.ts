@@ -1,9 +1,20 @@
 import { RetryMiddleware } from "../RetryMiddleware";
 import { CrawlContext, CrawlResult } from "../../../../core/ports/ICrawlMiddleware";
 
+// 注意：Bun 不支持 jest.mock factory 内 require() 加载原始模块。
+// 此处不依赖原始模块，直接 mock 完整接口。
 jest.mock("../../../../utils/rate-limiter", () => {
-  const actual = jest.requireActual("../../../../utils/rate-limiter");
-  return { ...actual, RATE_LIMIT_CODES: { test_site: [300011], xiaohongshu: [300011] } };
+  class MockSiteRateLimiter {
+    isPaused = false;
+    isEnabled = true;
+    recordResult = () => {};
+    onRateLimitError = () => {};
+    throttle = () => Promise.resolve();
+  }
+  return {
+    RATE_LIMIT_CODES: { test_site: [300011], xiaohongshu: [300011] },
+    SiteRateLimiter: MockSiteRateLimiter,
+  };
 });
 
 function createMockRateLimiter() {

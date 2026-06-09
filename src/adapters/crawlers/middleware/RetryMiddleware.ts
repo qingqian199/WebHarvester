@@ -34,6 +34,7 @@ export class RetryMiddleware implements ICrawlMiddleware {
             if (body.code === 300011 && ctx.site === "xiaohongshu") {
               this.logger.warn("⚠️ 小红书风控已触发，建议：1) 降低请求频率 2) 更换爬虫专用小号 3) 等待冷却后重试");
             }
+            this.rateLimiter?.onRateLimitError?.(body.code, ctx.url ? new URL(ctx.url).pathname : ctx.url);
             if (attempt < this.maxRetries) {
               await new Promise((r) => setTimeout(r, this.retryDelay));
               continue;

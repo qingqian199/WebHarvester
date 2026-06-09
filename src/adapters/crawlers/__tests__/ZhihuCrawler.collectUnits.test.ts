@@ -1,6 +1,10 @@
 import { ZhihuCrawler } from "../ZhihuCrawler";
 import { PageData } from "../../../core/ports/ISiteCrawler";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _getDesc = (o: any, p: string) => Object.getOwnPropertyDescriptor(o, p) ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(o), p);
+const _spyOnGetters: Array<[object, string | symbol, PropertyDescriptor | undefined]> = [];
+
 function mockPage(body: unknown, statusCode = 200, responseTime = 100): PageData {
   return {
     url: "https://www.zhihu.com/api/test",
@@ -25,6 +29,10 @@ describe("ZhihuCrawler.collectUnits", () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    for (const [o, p, d] of _spyOnGetters) {
+      if (d) Object.defineProperty(o, p as string, d);
+    }
+    _spyOnGetters.length = 0;
   });
 
   it("组合采集: 用户信息 + 热门搜索", async () => {
@@ -58,7 +66,11 @@ describe("ZhihuCrawler.collectUnits", () => {
 
   it("冷却期跳过签名请求", async () => {
     const rateLimiter = (crawler as any).rateLimiter;
-    jest.spyOn(rateLimiter, "isPaused", "get").mockReturnValue(true);
+    const _d = _getDesc(rateLimiter, "isPaused");
+    if (_d) {
+      Object.defineProperty(rateLimiter, "isPaused", { get: () => true, configurable: true });
+      _spyOnGetters.push([rateLimiter, "isPaused", _d]);
+    }
     const fetchApiSpy = jest.spyOn(crawler as any, "fetchApi");
 
     const results = await crawler.collectUnits(["zhihu_hot_search", "zhihu_user_info"], {});
