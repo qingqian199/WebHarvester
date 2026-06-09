@@ -55,47 +55,68 @@ export class WebServer {
     await this.ensureJwtConfig();
     this.registerRoutes();
 
-    this.server = http.createServer(async (req, res) => {
+    this.server = http.createServer((req, res) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-      if (req.method === "OPTIONS") {
-        res.writeHead(204);
-        res.end();
-        return;
-      }
+      // Bun 不支持 async callback to http.createServer，手动处理 Promise
+      Promise.resolve()
+        .then(async () => {
+          if (req.method === "OPTIONS") {
+            res.writeHead(204);
+            res.end();
+            return;
+          }
 
-      // 静态文件 — 无需认证
-      if (req.url === "/" || req.url === "/index.html") return this.serveStatic(res, "static/index.html", "text/html");
-      if (req.url === "/style.css") return this.serveStatic(res, "static/style.css", "text/css");
-      if (req.url === "/api.js") return this.serveStatic(res, "static/api.js", "application/javascript");
+          // 静态文件 — 无需认证
+          if (req.url === "/" || req.url === "/index.html") {
+            await this.serveStatic(res, "static/index.html", "text/html");
+            return;
+          }
+          if (req.url === "/style.css") {
+            await this.serveStatic(res, "static/style.css", "text/css");
+            return;
+          }
+          if (req.url === "/api.js") {
+            await this.serveStatic(res, "static/api.js", "application/javascript");
+            return;
+          }
 
-      // JWT 认证（对所有 /api/ 路径，除了 auth 相关和静态文件）
-      if (req.url?.startsWith("/api/") && !req.url.startsWith("/api/auth/") && req.url !== "/api/auth/login") {
-        const authResult = this.verifyAuth(req);
-        if (!authResult) {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ code: -1, msg: "未授权，请先登录" }));
-          return;
-        }
-      }
+          // JWT 认证（对所有 /api/ 路径，除了 auth 相关和静态文件）
+          if (req.url?.startsWith("/api/") && !req.url.startsWith("/api/auth/") && req.url !== "/api/auth/login") {
+            const authResult = this.verifyAuth(req);
+            if (!authResult) {
+              res.writeHead(401, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ code: -1, msg: "未授权，请先登录" }));
+              return;
+            }
+          }
 
-      const url = req.url || "/";
-      const resolved = this.router.resolve(req.method || "GET", url);
-      if (resolved) {
-        try {
-          await resolved.handler(req, res, resolved.params);
-        } catch (e) {
+          const url = req.url || "/";
+          const resolved = this.router.resolve(req.method || "GET", url);
+          if (resolved) {
+            try {
+              await resolved.handler(req, res, resolved.params);
+            } catch (e) {
+              const errMsg = (e as Error).message;
+              this.logger.warn(formatError("E001", errMsg));
+              res.writeHead(500, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ code: -1, msg: errMsg }));
+            }
+          } else {
+            res.writeHead(404);
+            res.end("Not Found");
+          }
+        })
+        .catch((e) => {
           const errMsg = (e as Error).message;
           this.logger.warn(formatError("E001", errMsg));
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ code: -1, msg: errMsg }));
-        }
-      } else {
-        res.writeHead(404);
-        res.end("Not Found");
-      }
+          try {
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ code: -1, msg: errMsg }));
+          } catch {}
+        });
     });
 
     this.server.listen(listenPort, () => {

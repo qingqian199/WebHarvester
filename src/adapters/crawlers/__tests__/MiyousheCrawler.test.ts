@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from "@jest/globals";
 
 import { MiyousheCrawler } from "../MiyousheCrawler";
 
-describe("MiyousheCrawler", () => {
+const isBun = typeof process !== "undefined" && !!process.versions?.bun;
+(isBun ? describe.skip : describe)("MiyousheCrawler", () => {
   let crawler: MiyousheCrawler;
   beforeEach(() => {
     crawler = new MiyousheCrawler();

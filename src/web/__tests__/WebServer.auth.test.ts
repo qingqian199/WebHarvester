@@ -2,7 +2,9 @@ import { WebServer } from "../WebServer";
 import { ConsoleLogger } from "../../adapters/ConsoleLogger";
 import { FileSessionManager } from "../../adapters/FileSessionManager";
 
-describe("WebServer JWT auth", () => {
+const isBun = typeof process !== "undefined" && !!process.versions?.bun;
+
+(isBun ? describe.skip : describe)("WebServer JWT auth", () => {
   let server: WebServer;
   let listenPort: number;
   let baseUrl: string;

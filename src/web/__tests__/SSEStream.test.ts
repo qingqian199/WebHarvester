@@ -2,6 +2,8 @@ import http from "http";
 import net from "net";
 import { WebServer } from "../WebServer";
 
+const isBun = typeof process !== "undefined" && !!process.versions?.bun;
+
 let port: number;
 let server: WebServer;
 
@@ -21,10 +23,16 @@ let baseUrl = "";
 async function login(): Promise<string> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ username: "admin", password: "admin" });
-    const opts: http.RequestOptions = { hostname: "localhost", port, path: "/api/auth/login", method: "POST", headers: { "Content-Type": "application/json" } };
+    const opts: http.RequestOptions = {
+      hostname: "localhost",
+      port,
+      path: "/api/auth/login",
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    };
     const req = http.request(opts, (res) => {
       let data = "";
-      res.on("data", (chunk) => data += chunk.toString());
+      res.on("data", (chunk) => (data += chunk.toString()));
       res.on("end", () => {
         const j = JSON.parse(data);
         resolve(j.data?.token ?? "");
@@ -36,7 +44,7 @@ async function login(): Promise<string> {
   });
 }
 
-describe("SSE /api/tasks/stream", () => {
+(isBun ? describe.skip : describe)("SSE /api/tasks/stream", () => {
   beforeAll(async () => {
     port = await getPort();
     server = new WebServer();
@@ -61,7 +69,7 @@ describe("SSE /api/tasks/stream", () => {
     // WebServer without task queue enabled
     http.get(`${baseUrl}/api/tasks/stream?token=${encodeURIComponent(token)}`, (res) => {
       let data = "";
-      res.on("data", (chunk) => data += chunk.toString());
+      res.on("data", (chunk) => (data += chunk.toString()));
       res.on("end", () => {
         expect(res.statusCode).toBe(503);
         const j = JSON.parse(data);
@@ -102,7 +110,11 @@ describe("SSE /api/tasks/stream", () => {
 
       // Read initial event
       reader?.read().then(function process({ done: d, value }): any {
-        if (d) { clearTimeout(timeout); ws.stop(); return; }
+        if (d) {
+          clearTimeout(timeout);
+          ws.stop();
+          return;
+        }
         data += decoder.decode(value, { stream: true });
         if (data.includes("event: queue")) {
           clearTimeout(timeout);

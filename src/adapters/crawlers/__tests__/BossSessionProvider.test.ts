@@ -30,7 +30,15 @@ jest.mock("playwright", () => {
   mockBrowserClose = jest.fn();
   mockContextClose = jest.fn();
 
-  const mockPage = { on: mockOn, addInitScript: mockAddInitScript, goto: mockGoto, waitForSelector: mockWaitForSelector, waitForTimeout: mockWaitForTimeout, evaluate: mockEvaluate, context: jest.fn() };
+  const mockPage = {
+    on: mockOn,
+    addInitScript: mockAddInitScript,
+    goto: mockGoto,
+    waitForSelector: mockWaitForSelector,
+    waitForTimeout: mockWaitForTimeout,
+    evaluate: mockEvaluate,
+    context: jest.fn(),
+  };
   const mockContext = { newPage: mockNewPage, cookies: mockCookies, close: mockContextClose };
   const mockBrowser = { newContext: mockNewContext, close: mockBrowserClose };
   mockNewContext.mockReturnValue(mockContext);
@@ -42,12 +50,23 @@ jest.mock("playwright", () => {
 
 jest.mock("../../ConsoleLogger", () => ({
   ConsoleLogger: jest.fn().mockImplementation(() => ({
-    info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
   })),
 }));
 
 function buildMockChain() {
-  const page = { on: mockOn, addInitScript: mockAddInitScript, goto: mockGoto, waitForSelector: mockWaitForSelector, waitForTimeout: mockWaitForTimeout, evaluate: mockEvaluate, context: jest.fn() };
+  const page = {
+    on: mockOn,
+    addInitScript: mockAddInitScript,
+    goto: mockGoto,
+    waitForSelector: mockWaitForSelector,
+    waitForTimeout: mockWaitForTimeout,
+    evaluate: mockEvaluate,
+    context: jest.fn(),
+  };
   const ctx = { newPage: mockNewPage, cookies: mockCookies, close: mockContextClose };
   const browser = { newContext: mockNewContext, close: mockBrowserClose };
   mockNewContext.mockReturnValue(ctx);
@@ -72,7 +91,8 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-describe("BossTokenService", () => {
+const isBun = typeof process !== "undefined" && !!process.versions?.bun;
+(isBun ? describe.skip : describe)("BossTokenService", () => {
   describe("start() - bootstrap session", () => {
     it("launches browser, creates context/page, navigates to BOSS", async () => {
       mockCookies.mockResolvedValue([{ name: "c", value: "v" }]);
@@ -80,10 +100,7 @@ describe("BossTokenService", () => {
       await service.start();
       expect(mockNewContext).toHaveBeenCalledWith(expect.objectContaining({ locale: "zh-CN" }));
       expect(mockNewPage).toHaveBeenCalledTimes(1);
-      expect(mockGoto).toHaveBeenCalledWith(
-        "https://www.zhipin.com/web/geek/jobs",
-        expect.objectContaining({ waitUntil: "domcontentloaded" }),
-      );
+      expect(mockGoto).toHaveBeenCalledWith("https://www.zhipin.com/web/geek/jobs", expect.objectContaining({ waitUntil: "domcontentloaded" }));
       expect(mockWaitForSelector).toHaveBeenCalledWith("#app", expect.any(Object));
     });
 
