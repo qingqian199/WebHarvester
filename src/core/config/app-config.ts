@@ -6,12 +6,14 @@ import { ProxyPoolConfig } from "../ports/IProxyProvider";
 
 const ConfigSchema = z.object({
   headless: z.boolean().default(true),
-  browserMask: z.object({
-    viewport: z.object({ width: z.number(), height: z.number() }),
-    minDelayMs: z.number(),
-    maxDelayMs: z.number(),
-    enableHardwareMask: z.boolean(),
-  }).default(BROWSER_MASK_CONFIG as any),
+  browserMask: z
+    .object({
+      viewport: z.object({ width: z.number(), height: z.number() }),
+      minDelayMs: z.number(),
+      maxDelayMs: z.number(),
+      enableHardwareMask: z.boolean(),
+    })
+    .default(BROWSER_MASK_CONFIG as any),
   actionTimeoutMs: z.number().int().positive().default(30000),
   taskTimeoutMs: z.number().int().positive().default(60000),
   captureAllNetwork: z.boolean().default(true),
@@ -20,55 +22,90 @@ const ConfigSchema = z.object({
   outputMd: z.boolean().default(true),
   outputCsv: z.boolean().default(false),
   outputDir: z.string().default("./output"),
-  auth: z.object({
-    loginUrl: z.string().optional(),
-    verifyUrl: z.string().optional(),
-    loggedInSelector: z.string().optional(),
-    loggedOutSelector: z.string().optional(),
-    qrLoginAutoSave: z.boolean().optional(),
-  }).optional(),
-  crawlOps: z.object({
-    generateStubs: z.boolean().optional(),
-    stubLanguage: z.enum(["python", "javascript"]).optional(),
-  }).optional(),
+  auth: z
+    .object({
+      loginUrl: z.string().optional(),
+      verifyUrl: z.string().optional(),
+      loggedInSelector: z.string().optional(),
+      loggedOutSelector: z.string().optional(),
+      qrLoginAutoSave: z.boolean().optional(),
+    })
+    .optional(),
+  crawlOps: z
+    .object({
+      generateStubs: z.boolean().optional(),
+      stubLanguage: z.enum(["python", "javascript"]).optional(),
+    })
+    .optional(),
   crawlers: z.record(z.string(), z.enum(["enabled", "disabled"])).optional(),
   features: z.record(z.string(), z.boolean()).optional(),
-  rateLimit: z.object({
-    enabled: z.boolean().optional(),
-    minDelay: z.number().optional(),
-    maxDelay: z.number().optional(),
-    cooldownMinutes: z.number().optional(),
-    maxConcurrentSignatures: z.number().optional(),
-    maxConcurrentPages: z.number().optional(),
-  }).optional(),
+  rateLimit: z
+    .object({
+      enabled: z.boolean().optional(),
+      minDelay: z.number().optional(),
+      maxDelay: z.number().optional(),
+      cooldownMinutes: z.number().optional(),
+      maxConcurrentSignatures: z.number().optional(),
+      maxConcurrentPages: z.number().optional(),
+    })
+    .optional(),
   jwtSecret: z.string().optional(),
-  users: z.array(z.object({
-    username: z.string(),
-    passwordHash: z.string(),
-    role: z.string().optional(),
-  })).optional(),
-  encrypted: z.object({
-    masterKey: z.string().optional(),
-    algorithm: z.string().optional(),
-  }).optional(),
-  proxyPool: z.object({
-    enabled: z.boolean(),
-    proxies: z.array(z.object({
-      host: z.string(), port: z.number(), protocol: z.enum(["http", "https", "socks5"]),
-      username: z.string().optional(), password: z.string().optional(),
-    })),
-    testUrl: z.string().optional(),
-    healthCheckIntervalMs: z.number().int().positive().optional(),
-  }).optional(),
-  backendService: z.object({
-    baseUrl: z.string().default("http://localhost:3001"),
-    timeout: z.number().int().positive().default(30000),
-  }).optional(),
-  chromeService: z.object({
-    port: z.number().int().positive().default(9222),
-    chromePath: z.string().optional(),
-    userDataDir: z.string().optional(),
-  }).optional(),
+  users: z
+    .array(
+      z.object({
+        username: z.string(),
+        passwordHash: z.string(),
+        role: z.string().optional(),
+      }),
+    )
+    .optional(),
+  encrypted: z
+    .object({
+      masterKey: z.string().optional(),
+      algorithm: z.string().optional(),
+    })
+    .optional(),
+  proxyPool: z
+    .object({
+      enabled: z.boolean(),
+      proxies: z.array(
+        z.object({
+          host: z.string(),
+          port: z.number(),
+          protocol: z.enum(["http", "https", "socks5"]),
+          username: z.string().optional(),
+          password: z.string().optional(),
+        }),
+      ),
+      testUrl: z.string().optional(),
+      healthCheckIntervalMs: z.number().int().positive().optional(),
+    })
+    .optional(),
+  backendService: z
+    .object({
+      baseUrl: z.string().default("http://localhost:3001"),
+      timeout: z.number().int().positive().default(30000),
+    })
+    .optional(),
+  chromeService: z
+    .object({
+      port: z.number().int().positive().default(9222),
+      chromePath: z.string().optional(),
+      userDataDir: z.string().optional(),
+    })
+    .optional(),
+  logging: z
+    .object({
+      format: z.enum(["text", "json"]).optional(),
+    })
+    .optional(),
+  captureIntegration: z
+    .object({
+      tsharkPath: z.string().optional(),
+      mitmproxyPath: z.string().optional(),
+      defaultImportDir: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type ValidatedConfig = z.infer<typeof ConfigSchema>;
@@ -115,6 +152,14 @@ export interface AppConfig {
     chromePath?: string;
     userDataDir?: string;
   };
+  logging?: {
+    format?: "text" | "json";
+  };
+  captureIntegration?: {
+    tsharkPath?: string;
+    mitmproxyPath?: string;
+    defaultImportDir?: string;
+  };
 }
 
 export interface BatchTaskItem {
@@ -158,6 +203,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     boss_zhipin: "disabled",
     douyin: "enabled",
     xueshu: "enabled",
+    miyoushe: "enabled",
   },
   rateLimit: DEFAULT_RATE_LIMIT_CONFIG,
+  logging: {
+    format: "text",
+  },
 };

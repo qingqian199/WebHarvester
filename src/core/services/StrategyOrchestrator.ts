@@ -1,16 +1,27 @@
-import fetch from "node-fetch";
-
 const SPA_PATTERNS = [
-  "__NUXT__", "__NEXT_DATA__", "__REACT_DEVTOOLS_GLOBAL_HOOK__",
-  "ng-version", "ng-app", "vue-resource", "vue-router",
-  "createApp", "createRoot", "ReactDOM.render",
-  "window.__initial_state__", "window.__INITIAL_STATE__",
+  "__NUXT__",
+  "__NEXT_DATA__",
+  "__REACT_DEVTOOLS_GLOBAL_HOOK__",
+  "ng-version",
+  "ng-app",
+  "vue-resource",
+  "vue-router",
+  "createApp",
+  "createRoot",
+  "ReactDOM.render",
+  "window.__initial_state__",
+  "window.__INITIAL_STATE__",
 ];
 
 const JS_CHALLENGE_PATTERNS = [
-  "cdn-cgi/challenge-platform", "cf-browser-verification",
-  "cloudflare", "__cf_chl_frm", "_cf_chl_opt",
-  "data-nscript", "Next.js Challenge", "just a moment",
+  "cdn-cgi/challenge-platform",
+  "cf-browser-verification",
+  "cloudflare",
+  "__cf_chl_frm",
+  "_cf_chl_opt",
+  "data-nscript",
+  "Next.js Challenge",
+  "just a moment",
 ];
 
 const SHELL_THRESHOLD = 300;
@@ -28,7 +39,11 @@ interface ScoutCacheEntry {
 const scoutCache = new Map<string, ScoutCacheEntry>();
 
 function getDomain(url: string): string {
-  try { return new URL(url).hostname; } catch { return url; }
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 /** 策略编排器。根据页面 HTML 特征 + 侦察请求决定使用轻量 HTTP 引擎还是浏览器引擎。 */
@@ -87,10 +102,10 @@ export class StrategyOrchestrator {
       const firstRes = await fetch(url, {
         method: "GET",
         redirect: "manual",
-        signal: controller.signal as any,
+        signal: controller.signal,
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
       });
       clearTimeout(timeout);

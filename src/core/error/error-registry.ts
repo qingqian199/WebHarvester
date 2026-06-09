@@ -47,6 +47,41 @@ const REGISTRY: Record<string, ErrorEntry> = {
   E304: { message: "文件删除失败", suggestion: "请确认文件路径正确且有删除权限" },
   E305: { message: "数据序列化失败", suggestion: "采集结果序列化异常，请检查数据格式" },
 
+  // E050-059: 签名
+  [ErrorCode.SIGN_KEY_EXPIRED]: { message: "签名密钥已过期", suggestion: "请重新获取签名密钥" },
+  [ErrorCode.SIGN_COMPUTE_FAILED]: { message: "签名计算失败", suggestion: "请检查签名算法参数是否正确" },
+  [ErrorCode.SIGN_BANNED]: { message: "签名被风控封禁", suggestion: "当前签名算法已被目标站点封禁，请更新算法" },
+  [ErrorCode.SIGN_RATE_LIMITED]: { message: "签名请求被限流", suggestion: "签名频率过高，请降低请求频率" },
+
+  // E060-069: 反爬
+  [ErrorCode.CAPTCHA_DETECTED]: { message: "检测到验证码", suggestion: "目标站点触发了验证码，请使用浏览器模式或手动完成验证" },
+  [ErrorCode.IP_BLOCKED]: { message: "IP 已被封禁", suggestion: "当前 IP 已被目标站点封禁，请更换代理 IP" },
+  [ErrorCode.JS_CHALLENGE]: { message: "检测到 JavaScript 挑战", suggestion: "目标站点启用了 JS 挑战防护，请使用浏览器引擎采集" },
+  [ErrorCode.COOKIE_CHALLENGE]: { message: "检测到 Cookie 挑战", suggestion: "目标站点启用了 Cookie 挑战，需要浏览器环境加载" },
+
+  // E070-079: 限流
+  [ErrorCode.RATE_LIMITED]: { message: "请求频率超限", suggestion: "当前请求频率超过目标站点的限制" },
+  [ErrorCode.COOLDOWN_ACTIVE]: { message: "站点冷却中", suggestion: "该站点正处于风控冷却期，请等待冷却结束后再采集" },
+  [ErrorCode.CONCURRENCY_EXCEEDED]: { message: "并发数超限", suggestion: "当前任务并发数超过配置限制" },
+
+  // E080-089: CDP
+  [ErrorCode.CDP_CONNECT_FAILED]: { message: "CDP 连接失败", suggestion: "请确认 ChromeService 已启动且端口配置正确" },
+  [ErrorCode.CDP_TIMEOUT]: { message: "CDP 操作超时", suggestion: "浏览器响应超时，请检查浏览器状态" },
+  [ErrorCode.BROWSER_POOL_EXHAUSTED]: { message: "浏览器池耗尽", suggestion: "无可用浏览器实例，请增加 pool 大小" },
+
+  // E090-099: 配置
+  [ErrorCode.CONFIG_INVALID]: { message: "配置无效", suggestion: "请检查配置文件的格式和内容" },
+  [ErrorCode.CONFIG_MISSING_FIELD]: { message: "缺少必要配置字段", suggestion: "请检查是否遗漏了必要的配置项" },
+
+  // E150-159: CLI
+  [ErrorCode.CLI_INVALID_ACTION]: { message: "CLI 操作类型无效", suggestion: "请使用支持的操作类型" },
+  [ErrorCode.CLI_MISSING_PARAM]: { message: "缺少必要的 CLI 参数", suggestion: "请补充缺失的参数后再试" },
+
+  // E160-169: MCP
+  [ErrorCode.MCP_TOOL_NOT_FOUND]: { message: "MCP 工具未找到", suggestion: "请检查工具名称是否正确" },
+  [ErrorCode.MCP_INVALID_PARAMS]: { message: "MCP 调用参数无效", suggestion: "请检查参数格式和必填项" },
+  [ErrorCode.MCP_EXECUTION_ERROR]: { message: "MCP 工具执行错误", suggestion: "工具执行时发生异常，请检查输入和日志" },
+
   // E999: 未知
   [ErrorCode.UNKNOWN_ERROR]: { message: "未知错误", suggestion: "请联系开发者并提供错误日志" },
 };

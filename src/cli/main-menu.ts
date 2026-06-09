@@ -3,221 +3,232 @@ import { HarvestConfig } from "../core/models";
 import { FileSessionManager } from "../adapters/FileSessionManager";
 import { loadAppConfig } from "../utils/config-loader";
 import { FeatureFlags } from "../core/features";
+import { getStatusInfo, renderStatusBar } from "./ui/status-bar";
 
 export type MenuAction =
-    | { type: "single"; config: HarvestConfig; profile?: string; saveSession: boolean; useChromeService?: boolean }
-    | { type: "crawler-site"; site: string; url: string; profile?: string }
-    | { type: "batch" }
-    | { type: "login"; profile: string; loginUrl: string; verifyUrl: string }
-    | { type: "qrcode"; profile: string; loginUrl: string; verifyUrl: string }
-    | { type: "quick-article"; url: string; profile?: string }
-    | { type: "analyze" }
-    | { type: "gen-stub" }
-    | { type: "export-comments" }
-    | { type: "export-xhs-comments" }
-    | { type: "view-sessions" }
-    | { type: "web" }
-    | { type: "backend-status" }
-    | { type: "view-config" }
-    | { type: "toggle-features" }
-    | { type: "exit" };
+  | { type: "single"; config: HarvestConfig; profile?: string; saveSession: boolean; useChromeService?: boolean }
+  | { type: "crawler-site"; site: string; url: string; profile?: string }
+  | { type: "batch" }
+  | { type: "login"; profile: string; loginUrl: string; verifyUrl: string }
+  | { type: "qrcode"; profile: string; loginUrl: string; verifyUrl: string }
+  | { type: "quick-article"; url: string; profile?: string }
+  | { type: "analyze" }
+  | { type: "gen-stub" }
+  | { type: "export-comments" }
+  | { type: "export-xhs-comments" }
+  | { type: "view-sessions" }
+  | { type: "web" }
+  | { type: "backend-status" }
+  | { type: "view-config" }
+  | { type: "toggle-features" }
+  | { type: "exit"; restart?: boolean };
 
-export async function startMainMenu(statusLine?: string): Promise<MenuAction> {
-    const appCfg = await loadAppConfig();
-    const enabledCrawlers = Object.entries(appCfg.crawlers ?? {})
-        .filter(([, v]) => v === "enabled")
-        .map(([k]) => k);
+export async function startMainMenu(_statusLine?: string): Promise<MenuAction> {
+  const appCfg = await loadAppConfig();
+  const enabledCrawlers = Object.entries(appCfg.crawlers ?? {})
+    .filter(([, v]) => v === "enabled")
+    .map(([k]) => k);
 
-    const menuMessage = statusLine ? `🌐 WebHarvester 主菜单${statusLine}` : "🌐 WebHarvester 主菜单";
-    const { action } = await inquirer.prompt([
-        {
-            type: "list", name: "action", message: menuMessage,
-            choices: [
-                new inquirer.Separator(" 📌 采集模式"),
-                { name: "  1. 通用站点探测", value: "single" },
-                ...(enabledCrawlers.length > 0
-                    ? [{ name: `  2. 特化站点采集（${enabledCrawlers.join("/")}）`, value: "crawler" }]
-                    : []),
-                { name: "  3. 批量任务", value: "batch" },
-                ...(FeatureFlags.enableChromeService
-                    ? [{ name: " 🔗 连接已有Chrome采集", value: "chrome_capture" }]
-                    : []),
-                new inquirer.Separator(" 🔐 登录与会话"),
-                { name: "  4. 账号密码登录", value: "login" },
-                { name: "  5. 扫码登录", value: "qrcode" },
-                new inquirer.Separator(" 📊 离线分析"),
-                { name: "  6. 分析已有采集结果", value: "analyze" },
-                { name: "  7. 生成签名桩代码", value: "gen-stub" },
-                { name: "  8. 导出抖音评论 (浏览器内直连翻页→Excel)", value: "export-comments" },
-                { name: "  9. 导出小红书评论 (浏览器内直连翻页→Excel)", value: "export-xhs-comments" },
-                { name: " 10. 查看已存会话", value: "view-sessions" },
-                new inquirer.Separator(" 🌍 服务"),
-                { name: " 11. 启动 Web 可视化面板", value: "web" },
-                { name: " 12. 🔌 后端服务状态", value: "backend-status" },
-                new inquirer.Separator(" ⚙️ 配置"),
-                { name: " 13. 查看当前配置", value: "view-config" },
-                { name: " 14. 切换功能开关", value: "toggle-features" },
-                { name: "  0. 退出", value: "exit" },
-            ]
-        }
+  // 顶部状态栏
+  const status = getStatusInfo();
+  console.log(`\n${"─".repeat(56)}`);
+  console.log(`  WebHarvester v1.2  ${renderStatusBar(status)}`);
+  console.log(`${"─".repeat(56)}\n`);
+
+  const { action } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "action",
+      message: "选择操作",
+      choices: [
+        new inquirer.Separator(" ⚡ 快速采集"),
+        { name: "  ▶ 输入 URL 开始采集（自动匹配最优方式）", value: "quick-crawl" },
+        new inquirer.Separator(" 📥 采集"),
+        { name: "  1. 特化站点采集", value: "crawler" },
+        ...(FeatureFlags.enableChromeService ? [{ name: "  2. 通用浏览器采集 (CDP)", value: "chrome_capture" }] : []),
+        { name: "  3. 批量任务", value: "batch" },
+        { name: "  4. 快速文章", value: "quick-article" },
+        new inquirer.Separator(" 📊 数据"),
+        { name: "  5. 查看采集结果", value: "analyze" },
+        { name: "  6. 管理登录会话", value: "view-sessions" },
+        { name: "  7. 导出数据（抖音/小红书评论→Excel）", value: "export-comments" },
+        new inquirer.Separator(" ⚙️ 系统"),
+        { name: "  8. Web 可视化面板", value: "web" },
+        { name: "  9. 配置与功能开关", value: "view-config" },
+        { name: "  0. 退出", value: "exit" },
+      ],
+    },
+  ]);
+
+  if (action === "quick-crawl") {
+    // 快速采集：输入 URL → 自动匹配
+    const { url } = await inquirer.prompt([{ type: "input", name: "url", message: "目标 URL：", validate: (v: string) => !!v.trim() }]);
+    // 尝试匹配特化爬虫
+    const domain = url
+      .replace(/^https?:\/\//, "")
+      .replace(/\/.*$/, "")
+      .replace(/^www\./, "");
+    const matched = enabledCrawlers.find((c) => {
+      const map: Record<string, string[]> = {
+        xiaohongshu: ["xiaohongshu.com"],
+        zhihu: ["zhihu.com", "zhuanlan.zhihu.com"],
+        bilibili: ["bilibili.com"],
+        tiktok: ["tiktok.com"],
+        boss_zhipin: ["zhipin.com"],
+        douyin: ["douyin.com"],
+        miyoushe: ["miyoushe.com"],
+        xueshu: ["xueshu.baidu.com"],
+      };
+      return (map[c] || []).some((d) => domain.includes(d));
+    });
+    if (matched) {
+      const list = await new FileSessionManager().listProfiles();
+      const siteSessions = list.filter((s) => s.toLowerCase().includes(matched));
+      let profile: string | undefined;
+      if (siteSessions.length > 0) {
+        const { useIt } = await inquirer.prompt([
+          { type: "confirm", name: "useIt", message: `检测到${matched}会话：${siteSessions[0]}，使用？`, default: true },
+        ]);
+        if (useIt) profile = siteSessions[0];
+      }
+      return { type: "crawler-site", site: matched, url, profile };
+    }
+    // 无匹配 → 通用浏览器采集
+    const config: HarvestConfig = { targetUrl: url, networkCapture: { captureAll: true, enhancedFullCapture: false } };
+    return { type: "single", config, saveSession: false };
+  }
+
+  if (action === "crawler") {
+    const sites = enabledCrawlers.length > 0 ? enabledCrawlers : ["xiaohongshu"];
+    const { site } = await inquirer.prompt([{ type: "list", name: "site", message: "选择特化站点：", choices: sites }]);
+    const { url } = await inquirer.prompt([{ type: "input", name: "url", message: "目标 URL：", validate: (v: string) => !!v.trim() }]);
+    const list = await new FileSessionManager().listProfiles();
+    const siteSessions = list.filter((s) => s.toLowerCase().includes(site));
+    let profile: string | undefined;
+    if (siteSessions.length > 0) {
+      const { useIt } = await inquirer.prompt([{ type: "confirm", name: "useIt", message: `检测到会话：${siteSessions[0]}，使用？`, default: true }]);
+      if (useIt) profile = siteSessions[0];
+    }
+    return { type: "crawler-site", site, url, profile };
+  }
+
+  if (action === "chrome_capture") {
+    const { targetUrl } = await inquirer.prompt([{ type: "input", name: "targetUrl", message: "目标网址：", validate: (v: string) => !!v.trim() }]);
+    const { device } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "device",
+        message: "模拟设备：",
+        choices: [
+          { name: "💻 PC 端（默认）", value: "pc" },
+          { name: "📱 iPhone", value: "iPhone" },
+          { name: "📱 Android", value: "Android" },
+        ],
+      },
     ]);
+    const isEnhanced = true;
+    if (device !== "pc") console.log(`📱 已切换到${device}模式`);
+    console.log("\n⚠️ 增强全量模式将捕获所有网络请求，结果文件可能较大。\n");
+    const config: HarvestConfig = { targetUrl, networkCapture: { captureAll: true, enhancedFullCapture: isEnhanced }, device };
+    return { type: "single", config, useChromeService: true, saveSession: false };
+  }
 
-    if (action === "crawler") {
-        const sites = enabledCrawlers.length > 0 ? enabledCrawlers : ["xiaohongshu"];
-        const { site, url } = await inquirer.prompt([
-            { type: "list", name: "site", message: "选择特化站点：", choices: sites },
-            { type: "input", name: "url", message: "目标 URL：", validate: (v: string) => !!v.trim() },
-        ]);
-        const list = await new FileSessionManager().listProfiles();
-        const siteSessions = list.filter(s => s.toLowerCase().includes(site) || s === site);
-        let profile: string | undefined;
-        if (siteSessions.length > 0) {
-            const { useIt } = await inquirer.prompt([{ type: "confirm", name: "useIt", message: `检测到会话：${siteSessions[0]}，使用？`, default: true }]);
-            if (useIt) profile = siteSessions[0];
-        }
-        return { type: "crawler-site", site, url, profile };
+  if (action === "view-sessions") return { type: "view-sessions" };
+  if (action === "analyze") return { type: "analyze" };
+  if (action === "export-comments") {
+    const { sub } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "sub",
+        message: "导出数据",
+        choices: [
+          { name: "  1. 导出抖音评论 → Excel", value: "dy" },
+          { name: "  2. 导出小红书评论 → Excel", value: "xhs" },
+        ],
+      },
+    ]);
+    return { type: sub === "dy" ? "export-comments" : "export-xhs-comments" };
+  }
+  if (action === "web") return { type: "web" };
+  if (action === "view-config") {
+    const { sub } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "sub",
+        message: "配置与工具",
+        choices: [
+          { name: "  1. 查看当前配置", value: "view" },
+          { name: "  2. 切换功能开关", value: "toggle" },
+          new inquirer.Separator(" 🔧 工具"),
+          { name: "  3. 生成签名桩代码", value: "gen-stub" },
+          { name: "  4. 后端服务状态", value: "backend" },
+          new inquirer.Separator(" 🔐 登录"),
+          { name: "  5. 账号密码登录", value: "login" },
+          { name: "  6. 扫码登录", value: "qrcode" },
+        ],
+      },
+    ]);
+    if (sub === "view") return { type: "view-config" };
+    if (sub === "toggle") return { type: "toggle-features" };
+    if (sub === "gen-stub") return { type: "gen-stub" };
+    if (sub === "backend") return { type: "backend-status" };
+    if (sub === "login") {
+      const ans = await inquirer.prompt([
+        { type: "input", name: "profile", message: "会话保存名称：" },
+        { type: "input", name: "loginUrl", message: "登录页面 URL：" },
+        { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" },
+      ]);
+      return { type: "login", ...ans };
     }
-
-    if (action === "single") {
-        const { mode } = await inquirer.prompt([{ type: "list", name: "mode", message: "选择采集模式：", choices: [
-            { name: "🔍 快速探测（仅主文档和关键信息）", value: "quick" },
-            { name: "📦 全量采集（捕获所有网络请求和完整数据）", value: "full" },
-            { name: "🔬 全量采集（增强版，捕获 XHR/Fetch + 所有资源）", value: "enhanced" },
-        ]}]);
-        const ans = await inquirer.prompt([
-            { type: "input", name: "targetUrl", message: "目标网址：", validate: v => !!v.trim() },
-            ...(mode === "quick" ? [{
-                type: "checkbox" as const, name: "captureItems" as const, message: "采集内容", choices: [
-                    { name: "全量网络请求", value: "network", checked: true },
-                    { name: "DOM 元素", value: "element", checked: true },
-                    { name: "Cookie/存储", value: "storage", checked: true }
-                ]
-            }] : []),
-        ]);
-        const isEnhanced = mode === "enhanced";
-        const config: import("../core/models").HarvestConfig = {
-            targetUrl: ans.targetUrl.trim(),
-            networkCapture: { captureAll: mode === "full" || mode === "enhanced" || true, enhancedFullCapture: isEnhanced },
-            ...(mode === "quick" ? {
-                elementSelectors: ["input", "input[type=\"hidden\"]", "form", "button", "textarea", "select"],
-                storageTypes: ["localStorage", "sessionStorage", "cookies"] as const,
-            } : {}),
-        };
-        if (isEnhanced) {
-            console.log("\n⚠️ 增强全量模式将捕获页面所有网络请求（XHR/Fetch/静态资源），结果文件可能较大。\n");
-        }
-        const { useProfile } = await inquirer.prompt([{ type: "confirm", name: "useProfile", message: "是否使用/保存登录会话？", default: false }]);
-        let profile: string | undefined;
-        let saveSession = false;
-        if (useProfile) {
-            const list = await new FileSessionManager().listProfiles();
-            const choices = [...list.map(p => ({ name: `已存会话：${p}`, value: p })), { name: "➕ 新建会话", value: "__new__" }];
-            const { prof } = await inquirer.prompt([{ type: "list", name: "prof", message: "选择会话", choices }]);
-            if (prof === "__new__") {
-                const { newName } = await inquirer.prompt([{ type: "input", name: "newName", message: "新会话名称：" }]);
-                profile = newName; saveSession = true;
-            } else { profile = prof; saveSession = false; }
-        }
-        return { type: "single", config, profile, saveSession };
+    if (sub === "qrcode") {
+      const ans = await inquirer.prompt([
+        { type: "input", name: "profile", message: "会话保存名称：" },
+        { type: "input", name: "loginUrl", message: "登录页面 URL：" },
+        { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" },
+      ]);
+      return { type: "qrcode", ...ans };
     }
-
-    if (action === "login") {
-        const ans = await inquirer.prompt([
-            { type: "input", name: "profile", message: "会话保存名称：" },
-            { type: "input", name: "loginUrl", message: "登录页面 URL：" },
-            { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" }
-        ]);
-        return { type: "login", ...ans };
-    }
-
-    if (action === "qrcode") {
-        const ans = await inquirer.prompt([
-            { type: "input", name: "profile", message: "会话保存名称：" },
-            { type: "input", name: "loginUrl", message: "登录页面 URL：" },
-            { type: "input", name: "verifyUrl", message: "验证登录状态 URL：" }
-        ]);
-        return { type: "qrcode", ...ans };
-    }
-
-    if (action === "chrome_capture") {
-        const { mode, targetUrl } = await inquirer.prompt([
-            { type: "list", name: "mode", message: "选择采集模式：", choices: [
-                { name: "🔍 快速探测", value: "quick" },
-                { name: "📦 全量采集", value: "full" },
-                { name: "🔬 增强全量", value: "enhanced" },
-            ]},
-            { type: "input", name: "targetUrl", message: "目标网址：", validate: (v: string) => !!v.trim() },
-        ]);
-        const isEnhanced = mode === "enhanced";
-        const config: import("../core/models").HarvestConfig = {
-            targetUrl,
-            networkCapture: { captureAll: mode === "full" || mode === "enhanced", enhancedFullCapture: isEnhanced },
-        };
-        if (mode === "quick") {
-            config.elementSelectors = ["input", "input[type=\"hidden\"]", "form", "button", "textarea", "select"];
-            config.storageTypes = ["localStorage", "sessionStorage", "cookies"] as const;
-        }
-        if (isEnhanced) console.log("\n⚠️ 增强全量模式将捕获所有网络请求，结果文件可能较大。\n");
-        return { type: "single", config, useChromeService: true, saveSession: false };
-    }
-
-    if (action === "quick-article") {
-        const { url, useProfile } = await inquirer.prompt([
-            { type: "input", name: "url", message: "文章 URL：" },
-            { type: "confirm", name: "useProfile", message: "使用已存登录会话？", default: false }
-        ]);
-        let profile: string | undefined;
-        if (useProfile) {
-            const list = await new FileSessionManager().listProfiles();
-            if (list.length > 0) {
-                const { prof } = await inquirer.prompt([{ type: "list", name: "prof", message: "选择会话", choices: list }]);
-                profile = prof;
-            }
-        }
-        return { type: "quick-article", url, profile };
-    }
-
-    if (action === "gen-stub") return { type: "gen-stub" };
-    if (action === "export-comments") return { type: "export-comments" };
-    if (action === "export-xhs-comments") return { type: "export-xhs-comments" };
-    if (action === "view-sessions") return { type: "view-sessions" };
-    if (action === "analyze") return { type: "analyze" };
-    if (action === "web") return { type: "web" };
-    if (action === "backend-status") return { type: "backend-status" };
-    if (action === "view-config") return { type: "view-config" };
-    if (action === "toggle-features") return { type: "toggle-features" };
-    return { type: "exit" };
+  }
+  return { type: "exit" };
 }
 
 export async function runAnalyzeFromMenu() {
-    const fs = await import("fs/promises");
-    const path = await import("path");
-    const outputDir = path.resolve("./output");
-    try {
-        const entries = await fs.readdir(outputDir, { withFileTypes: true });
-        const jsonFiles: string[] = [];
-        for (const entry of entries) {
-            if (entry.isDirectory()) {
-                const dirPath = path.join(outputDir, entry.name);
-                const files = await fs.readdir(dirPath);
-                for (const f of files) { if (f.endsWith(".json")) jsonFiles.push(path.join(dirPath, f)); }
-            }
+  const fs = await import("fs/promises");
+  const path = await import("path");
+  const outputDir = path.resolve("./output");
+  try {
+    const entries = await fs.readdir(outputDir, { withFileTypes: true });
+    const jsonFiles: string[] = [];
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const dirPath = path.join(outputDir, entry.name);
+        const files = await fs.readdir(dirPath);
+        for (const f of files) {
+          if (f.endsWith(".json")) jsonFiles.push(path.join(dirPath, f));
         }
-        if (jsonFiles.length === 0) { console.log("⚠️ output 目录中未找到采集结果 JSON 文件。\n"); return; }
-        console.log(`\n📂 找到 ${jsonFiles.length} 个采集结果文件：\n`);
-        jsonFiles.forEach((f, i) => console.log(`  ${i + 1}. ${f}`));
-        console.log("");
-        const { idx } = await inquirer.prompt([{ type: "input", name: "idx", message: "输入编号查看分析报告（留空取消）：" }]);
-        if (!idx || isNaN(Number(idx)) || Number(idx) < 1 || Number(idx) > jsonFiles.length) { console.log("已取消。\n"); return; }
-        const { ResultAnalyzer } = await import("../utils/analyzer");
-        const raw = await fs.readFile(jsonFiles[Number(idx) - 1], "utf-8");
-        const result: import("../core/models").HarvestResult = JSON.parse(raw);
-        const summary = ResultAnalyzer.summarize(result);
-        const html = ResultAnalyzer.generateHtmlReport(summary, result);
-        const reportPath = path.resolve(`output/report-${result.traceId}.html`);
-        await fs.writeFile(reportPath, html, "utf-8");
-        console.log(`✅ 分析报告已生成：${reportPath}\n`);
-    } catch (e) {
-        console.log(`❌ 读取 output 目录失败：${(e as Error).message}\n`);
+      }
     }
+    if (jsonFiles.length === 0) {
+      console.log("⚠️ output 目录中未找到采集结果 JSON 文件。\n");
+      return;
+    }
+    console.log(`\n📂 找到 ${jsonFiles.length} 个采集结果文件：\n`);
+    jsonFiles.forEach((f, i) => console.log(`  ${i + 1}. ${f}`));
+    console.log("");
+    const { idx } = await inquirer.prompt([{ type: "input", name: "idx", message: "输入编号查看分析报告（留空取消）：" }]);
+    if (!idx || isNaN(Number(idx)) || Number(idx) < 1 || Number(idx) > jsonFiles.length) {
+      console.log("已取消。\n");
+      return;
+    }
+    const { ResultAnalyzer } = await import("../utils/analyzer");
+    const raw = await fs.readFile(jsonFiles[Number(idx) - 1], "utf-8");
+    const result: import("../core/models").HarvestResult = JSON.parse(raw);
+    const summary = ResultAnalyzer.summarize(result);
+    const html = ResultAnalyzer.generateHtmlReport(summary, result);
+    const reportPath = path.resolve(`output/report-${result.traceId}.html`);
+    await fs.writeFile(reportPath, html, "utf-8");
+    console.log(`✅ 分析报告已生成：${reportPath}\n`);
+  } catch (e) {
+    console.log(`❌ 读取 output 目录失败：${(e as Error).message}\n`);
+  }
 }

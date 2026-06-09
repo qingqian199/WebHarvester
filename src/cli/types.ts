@@ -1,11 +1,11 @@
 import { AppConfig } from "../core/config/app-config";
-import { ConsoleLogger } from "../adapters/ConsoleLogger";
+import type { ILogger } from "../core/ports/ILogger";
 import { CrawlerDispatcher } from "../core/services/CrawlerDispatcher";
 import { IProxyProvider } from "../core/ports/IProxyProvider";
 
 export interface CliDeps {
   config: AppConfig;
-  logger: ConsoleLogger;
+  logger: ILogger;
   dispatcher: CrawlerDispatcher;
   proxyProvider?: IProxyProvider;
 }

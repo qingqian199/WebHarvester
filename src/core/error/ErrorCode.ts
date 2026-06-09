@@ -1,23 +1,63 @@
 export enum ErrorCode {
+  // ── Input / Config (E00x) ──
   INVALID_URL = "E001",
   EMPTY_SELECTOR = "E002",
   INVALID_REGEX = "E003",
   EMPTY_TASK_CONFIG = "E004",
 
+  // ── Browser / Page (E01x) ──
   BROWSER_LAUNCH_FAILED = "E101",
   PAGE_NAVIGATE_TIMEOUT = "E102",
   ELEMENT_NOT_FOUND = "E103",
   ACTION_OPERATION_FAILED = "E104",
 
+  // ── Network / Capture (E02x) ──
   NETWORK_CAPTURE_ERROR = "E201",
   SCRIPT_EXEC_TIMEOUT = "E202",
   STORAGE_QUERY_FAILED = "E203",
 
+  // ── Filesystem (E03x) ──
   FS_MKDIR_FAILED = "E301",
   FS_WRITE_FAILED = "E302",
 
-  UNKNOWN_ERROR = "E999",
-
+  // ── Session (E04x) ──
   SESSION_EXPIRED = "E401",
   SESSION_INVALID = "E402",
+
+  // ── Signing (E05x) ──
+  SIGN_KEY_EXPIRED = "E050",
+  SIGN_COMPUTE_FAILED = "E051",
+  SIGN_BANNED = "E052",
+  SIGN_RATE_LIMITED = "E053",
+
+  // ── Anti-crawl (E06x) ──
+  CAPTCHA_DETECTED = "E060",
+  IP_BLOCKED = "E061",
+  JS_CHALLENGE = "E062",
+  COOKIE_CHALLENGE = "E063",
+
+  // ── Rate Limiting (E07x) ──
+  RATE_LIMITED = "E070",
+  COOLDOWN_ACTIVE = "E071",
+  CONCURRENCY_EXCEEDED = "E072",
+
+  // ── CDP / Browser Service (E08x) ──
+  CDP_CONNECT_FAILED = "E080",
+  CDP_TIMEOUT = "E081",
+  BROWSER_POOL_EXHAUSTED = "E082",
+
+  // ── Config (E09x) ──
+  CONFIG_INVALID = "E090",
+  CONFIG_MISSING_FIELD = "E091",
+
+  // ── CLI (E15x) ──
+  CLI_INVALID_ACTION = "E150",
+  CLI_MISSING_PARAM = "E151",
+
+  // ── MCP (E16x) ──
+  MCP_TOOL_NOT_FOUND = "E160",
+  MCP_INVALID_PARAMS = "E161",
+  MCP_EXECUTION_ERROR = "E162",
+
+  UNKNOWN_ERROR = "E999",
 }

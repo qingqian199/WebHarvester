@@ -266,6 +266,68 @@ export interface ZhihuHotSearch {
 
 // ── TikTok ──
 
+// ── 米游社 ──
+
+export interface MiyoushePostDetail {
+  postId: string;
+  subject: string;
+  content: string;
+  plainText: string;
+  images: string[];
+  uid: string;
+  created_at: number;
+  view_status: number;
+  is_original: number;
+  forum_id: number;
+  topics: string[];
+  stats: {
+    view: number;
+    like: number;
+    reply: number;
+    favorite: number;
+    share: number;
+  };
+}
+
+export interface MiyousheUserInfo {
+  uid: string;
+  nickname: string;
+  introduce: string;
+  avatar_url: string;
+  gender: number;
+  level: number;
+  level_exp: number;
+  like_num: number;
+  post_num: number;
+  replypost_num: number;
+  follow_cnt: number;
+  followed_cnt: number;
+  is_realname: boolean;
+  ip_region: string;
+}
+
+export interface MiyousheCommentItem {
+  reply_id: string;
+  uid: string;
+  nickname: string;
+  content: string;
+  like_count: number;
+  created_at: number;
+  sub_reply_count: number;
+}
+
+export interface MiyousheSearchItem {
+  post_id: string;
+  subject: string;
+  uid: string;
+  nickname: string;
+  forum_name: string;
+  created_at: number;
+  reply_count: number;
+  like_count: number;
+  view_status: number;
+}
+
 export interface TtFeedData {
   status_code?: number;
   itemList?: Array<Record<string, unknown>>;

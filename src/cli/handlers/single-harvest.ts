@@ -37,41 +37,20 @@ export async function handleSingleHarvest(deps: CliDeps, action: CliAction): Pro
       const svc = new HarvesterService(deps.logger, browser, storage, httpEngine, deps.dispatcher);
       await svc.harvest(action.config, "all", action.saveSession, sessionManager, action.profile, sessionState ?? undefined);
       return;
-    } catch { /* Bun 下 CDP 超时是预期行为，走 Node.js 子进程兜底 */ }
+    } catch {
+      /* CDP 直连失败，回退到 Playwright MCP */
+    }
 
-    // 兜底：Node.js 子进程 CDP 抓取（绕过 Bun WebSocket 不兼容）
+    // 兜底：Playwright MCP（替代旧的 Node.js CDP 子进程）
     try {
-      const { execFile } = await import("child_process");
-      const path_mod = await import("path");
-      const fs_mod = await import("fs");
-      const helperPath = path_mod.resolve(process.cwd(), "scripts", "cdp-harvest.mjs");
-      // 确保脚本存在
-      if (!fs_mod.existsSync(helperPath)) { throw new Error(`CDP helper not found: ${helperPath}`); }
-
-      const resultJson = await new Promise<string>((resolve, reject) => {
-        const proc = execFile("node", [helperPath, String(port), url], { timeout: 60000, windowsHide: true }, (err, stdout) => {
-          if (err) { reject(err); return; }
-          resolve(stdout);
-        });
-        proc.stderr?.on("data", (d: Buffer) => deps.logger.warn("[CDP] " + d.toString().trim()));
-      });
-      const result = JSON.parse(resultJson.trim().split("\n").pop() || "{}");
-      if (!result.success) throw new Error(result.error || "CDP harvest failed");
-
-      deps.logger.info(`✅ CDP 页面抓取成功: ${result.title}`);
-      console.log(`\n📄 页面标题: ${result.title}`);
-      console.log(`📐 内容长度: ${(result.text || "").length} 字符`);
-
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const filename = `cdp-harvest-${timestamp}.json`;
-      const outDir = deps.config.outputDir || "output";
-      fs_mod.mkdirSync(outDir, { recursive: true });
-      fs_mod.writeFileSync(path_mod.join(outDir, filename), JSON.stringify(result, null, 2), "utf-8");
-      console.log(`💾 已保存: ${outDir}/${filename}`);
+      const { McpBrowserAdapter } = await import("../../mcp-client/browser-engine");
+      const mcpBrowser = new McpBrowserAdapter(action.config?.device || "pc");
+      const svc = new HarvesterService(deps.logger, mcpBrowser, storage, httpEngine, deps.dispatcher);
+      await svc.harvest(action.config, "all", action.saveSession, sessionManager, action.profile, sessionState ?? undefined);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      deps.logger.error("ChromeService 连接失败", { err: msg });
-      console.log("\n❌ ChromeService 连接失败，请检查:\n  1. Chrome 是否已启动 (--remote-debugging-port=" + port + ")\n  2. config.json 中的 chromeService.port 是否正确\n  3. 是否有其他程序占用了端口 " + port + "\n  💡 可尝试关闭 ChromeService 后重试");
+      deps.logger.error("浏览器采集失败", { err: msg });
+      console.log("\n❌ 浏览器采集失败:", msg);
     }
     return;
   }

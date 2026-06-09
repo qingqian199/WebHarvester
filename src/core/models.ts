@@ -52,6 +52,8 @@ export interface HarvestConfig {
   jsScripts?: Array<string | { alias: string; script: string }>;
   networkCapture?: { captureAll: boolean; enhancedFullCapture?: boolean };
   storageTypes?: Array<"localStorage" | "sessionStorage" | "cookies">;
+  /** 模拟移动端设备。pc / iPhone / Android */
+  device?: "pc" | "iPhone" | "Android";
 }
 
 /** 页面加载性能指标（Performance API）。 */

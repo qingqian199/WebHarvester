@@ -24,7 +24,7 @@ export class HarvesterService {
     private readonly storage: IStorageAdapter,
     private readonly httpEngine?: ILightHttpEngine,
     private readonly crawlerDispatcher?: CrawlerDispatcher,
-  ) { }
+  ) {}
 
   /**
    * 执行一次完整采集任务。
@@ -36,7 +36,7 @@ export class HarvesterService {
     needSaveSession = false,
     sessionManager?: ISessionManager,
     sessionProfile?: string,
-    sessionState?: SessionState
+    sessionState?: SessionState,
   ): Promise<HarvestResult> {
     return withGlobalTimeout(async () => {
       try {
@@ -49,49 +49,59 @@ export class HarvesterService {
         this.logger.setTraceId?.(traceId);
         this.logger.info("开始采集任务", { url: config.targetUrl });
 
-        // 全量采集模式：跳过侦察和策略编排，直接启动浏览器做完整捕获
+        // 策略决策 0：优先使用特化爬虫（即使在增强全量模式下）
+        if (this.crawlerDispatcher) {
+          const session: CrawlerSession | undefined = sessionState
+            ? { cookies: sessionState.cookies, localStorage: sessionState.localStorage }
+            : undefined;
+          try {
+            const pageData = await this.crawlerDispatcher.fetch(config.targetUrl, session);
+            if (pageData) {
+              return this.handleCrawlerResult(config, pageData, traceId, outputFormat);
+            }
+          } catch (e) {
+            this.logger.warn("特化爬虫请求失败，切换为通用引擎", { url: config.targetUrl, err: (e as Error).message });
+          }
+          this.logger.info("无特化爬虫匹配，切换为通用引擎", { url: config.targetUrl });
+        }
+
+        // 增强全量模式：跳过侦察和 HTTP 引擎，直接启动浏览器做完整捕获
         if (config.networkCapture?.captureAll) {
           const enhanced = config.networkCapture?.enhancedFullCapture === true;
           this.logger.info(`全量采集模式已启用${enhanced ? "（增强版 — 捕获 XHR/Fetch）" : ""}`, { url: config.targetUrl });
-          return this.harvestWithBrowser(config, outputFormat, needSaveSession, sessionManager, sessionProfile, sessionState, traceId, true, enhanced);
+          return this.harvestWithBrowser(
+            config,
+            outputFormat,
+            needSaveSession,
+            sessionManager,
+            sessionProfile,
+            sessionState,
+            traceId,
+            true,
+            enhanced,
+          );
         }
 
-      // 策略决策 0：优先使用特化爬虫
-      if (this.crawlerDispatcher) {
-        const session: CrawlerSession | undefined = sessionState
-          ? { cookies: sessionState.cookies, localStorage: sessionState.localStorage }
-          : undefined;
-        try {
-          const pageData = await this.crawlerDispatcher.fetch(config.targetUrl, session);
-          if (pageData) {
-            return this.handleCrawlerResult(config, pageData, traceId, outputFormat);
-          }
-        } catch (e) {
-          this.logger.warn("特化爬虫请求失败，切换为通用引擎", { url: config.targetUrl, err: (e as Error).message });
-        }
-        this.logger.info("无特化爬虫匹配，切换为通用引擎", { url: config.targetUrl });
-      }
-
-      // 策略决策 1：轻量 HTTP 引擎（含自适应侦察）
-      if (this.httpEngine) {
-        const scouted = await StrategyOrchestrator.scout(config.targetUrl).catch(() => null);
-        if (scouted === "browser") {
-          this.logger.info("侦察检测到动态页面或 JS 挑战，直接使用浏览器引擎", { url: config.targetUrl });
-        } else {
-          const lightResult = await this.httpEngine.fetch(config.targetUrl).catch(() => null);
-          if (lightResult) {
-            const engine = await StrategyOrchestrator.decideEngine(lightResult.html);
-            if (engine === "http") {
-              return this.harvestWithHttp(config, lightResult, traceId, outputFormat);
-            }
-            this.logger.info("检测到动态页面，切换为浏览器引擎", { url: config.targetUrl });
+        // 策略决策 1：轻量 HTTP 引擎（含自适应侦察）
+        if (this.httpEngine) {
+          const scouted = await StrategyOrchestrator.scout(config.targetUrl).catch(() => null);
+          if (scouted === "browser") {
+            this.logger.info("侦察检测到动态页面或 JS 挑战，直接使用浏览器引擎", { url: config.targetUrl });
           } else {
-            this.logger.warn("HTTP 引擎请求失败，回退到浏览器引擎", { url: config.targetUrl });
+            const lightResult = await this.httpEngine.fetch(config.targetUrl).catch(() => null);
+            if (lightResult) {
+              const engine = await StrategyOrchestrator.decideEngine(lightResult.html);
+              if (engine === "http") {
+                return this.harvestWithHttp(config, lightResult, traceId, outputFormat);
+              }
+              this.logger.info("检测到动态页面，切换为浏览器引擎", { url: config.targetUrl });
+            } else {
+              this.logger.warn("HTTP 引擎请求失败，回退到浏览器引擎", { url: config.targetUrl });
+            }
           }
         }
-      }
 
-      return this.harvestWithBrowser(config, outputFormat, needSaveSession, sessionManager, sessionProfile, sessionState, traceId);
+        return this.harvestWithBrowser(config, outputFormat, needSaveSession, sessionManager, sessionProfile, sessionState, traceId);
       } catch (e) {
         const msg = formatError("E001", config?.targetUrl);
         this.logger.error(msg, { err: (e as Error).message });
@@ -112,12 +122,17 @@ export class HarvesterService {
     const result: HarvestResult = {
       traceId,
       targetUrl: config.targetUrl,
-      networkRequests: [{
-        url: config.targetUrl, method: "GET", statusCode,
-        requestHeaders: headers,
-        responseBody: body.slice(0, 10000),
-        timestamp: Date.now() - responseTime, completedAt: Date.now(),
-      }],
+      networkRequests: [
+        {
+          url: config.targetUrl,
+          method: "GET",
+          statusCode,
+          requestHeaders: headers,
+          responseBody: body.slice(0, 10000),
+          timestamp: Date.now() - responseTime,
+          completedAt: Date.now(),
+        },
+      ],
       elements: [],
       storage: { localStorage: {}, sessionStorage: {}, cookies: [] },
       jsVariables: {},
@@ -143,11 +158,17 @@ export class HarvesterService {
     const result: HarvestResult = {
       traceId,
       targetUrl: config.targetUrl,
-      networkRequests: [{
-        url: config.targetUrl, method: "GET", statusCode,
-        requestHeaders: {}, responseBody: html.slice(0, 5000),
-        timestamp: start, completedAt: start + responseTime,
-      }],
+      networkRequests: [
+        {
+          url: config.targetUrl,
+          method: "GET",
+          statusCode,
+          requestHeaders: {},
+          responseBody: html.slice(0, 5000),
+          timestamp: start,
+          completedAt: start + responseTime,
+        },
+      ],
       elements: [],
       storage: { localStorage: {}, sessionStorage: {}, cookies: [] },
       jsVariables: {},
@@ -186,7 +207,7 @@ export class HarvesterService {
     const [networkRequests, elements, storage] = await Promise.all([
       this.browser.captureNetworkRequests(config.networkCapture ?? { captureAll: true }),
       this.browser.queryElements(filterEmptySelectors(config.elementSelectors ?? [])),
-      this.browser.getStorage(config.storageTypes ?? ["localStorage", "sessionStorage", "cookies"])
+      this.browser.getStorage(config.storageTypes ?? ["localStorage", "sessionStorage", "cookies"]),
     ]);
 
     const jsVariables: Record<string, unknown> = {};
@@ -194,7 +215,9 @@ export class HarvesterService {
     // 增强全量模式：自动提取页面 SSR 数据（__INITIAL_STATE__ / __NEXT_DATA__ / __NUXT_DATA__）
     if (enableFullCapture || captureAllTypes) {
       try {
-        const ssrData = await this.browser.executeScript<string>(`(() => {
+        const ssrData = await this.browser
+          .executeScript<string>(
+            `(() => {
           const r = {};
           try {
             var is = window.__INITIAL_STATE__;
@@ -209,7 +232,9 @@ export class HarvesterService {
             if (nu) { try { r.__NUXT_DATA__ = JSON.parse(nu.textContent || '{}'); } catch(e) { r.__NUXT_DATA__ = (nu.textContent || '').slice(0, 1000); } }
           } catch(e) {}
           return JSON.stringify(r);
-        })()`).catch(() => "{}");
+        })()`,
+          )
+          .catch(() => "{}");
         const parsed = JSON.parse(ssrData);
         if (parsed.__INITIAL_STATE__ || parsed.__NEXT_DATA__ || parsed.__NUXT_DATA__) {
           jsVariables.__SSR_DATA__ = parsed;
@@ -217,7 +242,9 @@ export class HarvesterService {
             parsed.__INITIAL_STATE__ ? "__INITIAL_STATE__" : null,
             parsed.__NEXT_DATA__ ? "__NEXT_DATA__" : null,
             parsed.__NUXT_DATA__ ? "__NUXT_DATA__" : null,
-          ].filter(Boolean).join(", ");
+          ]
+            .filter(Boolean)
+            .join(", ");
           this.logger.info(`📄 页面 SSR 数据已提取：${hasTypes}`);
         }
       } catch {
@@ -256,9 +283,14 @@ export class HarvesterService {
     const pageMetrics = this.browser.getPageMetrics();
 
     const result: HarvestResult = {
-      traceId, targetUrl: config.targetUrl,
-      networkRequests, elements, storage, jsVariables,
-      startedAt: start, finishedAt: end,
+      traceId,
+      targetUrl: config.targetUrl,
+      networkRequests,
+      elements,
+      storage,
+      jsVariables,
+      startedAt: start,
+      finishedAt: end,
       pageMetrics: pageMetrics ?? undefined,
       analysis: { apiRequests, hiddenFields, authInfo: { localStorage: authLocal, sessionStorage: authSession } },
     };
@@ -268,8 +300,11 @@ export class HarvesterService {
 
     if (needSaveSession && sessionManager && sessionProfile) {
       const session: SessionState = {
-        cookies: storage.cookies, localStorage: storage.localStorage,
-        sessionStorage: storage.sessionStorage, createdAt: Date.now(), lastUsedAt: Date.now(),
+        cookies: storage.cookies,
+        localStorage: storage.localStorage,
+        sessionStorage: storage.sessionStorage,
+        createdAt: Date.now(),
+        lastUsedAt: Date.now(),
       };
       await sessionManager.save(sessionProfile, session);
       this.logger.info(`✅ 会话已保存至：${sessionProfile}`);

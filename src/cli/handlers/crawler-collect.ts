@@ -3,12 +3,20 @@ import path from "path";
 import { CliDeps, CliAction } from "../types";
 import { FileSessionManager } from "../../adapters/FileSessionManager";
 import { XhsCrawler, XhsApiEndpoints, XhsFallbackEndpoints } from "../../adapters/crawlers/XhsCrawler";
-import { XHS_CONTENT_UNITS, ZHIHU_CONTENT_UNITS, BILI_CONTENT_UNITS, TT_CONTENT_UNITS, BOSS_CONTENT_UNITS, DOUYIN_CONTENT_UNITS, SCHOLAR_CONTENT_UNITS, UnitResult } from "../../core/models/ContentUnit";
+import {
+  XHS_CONTENT_UNITS,
+  ZHIHU_CONTENT_UNITS,
+  BILI_CONTENT_UNITS,
+  TT_CONTENT_UNITS,
+  BOSS_CONTENT_UNITS,
+  DOUYIN_CONTENT_UNITS,
+  SCHOLAR_CONTENT_UNITS,
+  UnitResult,
+} from "../../core/models/ContentUnit";
 import { formatUnitResults } from "../../utils/formatter";
 import { exportResultsToXlsx } from "../../utils/exporter/xlsx-exporter";
 import { resolveBilibiliUrl, resolveZhihuUrl, resolveXiaohongshuUrl, resolveTikTokUrl, resolveDouyinUrl } from "../../utils/url-resolver";
 import { extractWbiKey } from "../../utils/crypto/bilibili-signer";
-import biliFetch from "node-fetch";
 import { BilibiliCrawler } from "../../adapters/crawlers/BilibiliCrawler";
 import { ISiteCrawler, CrawlerSession } from "../../core/ports/ISiteCrawler";
 import { ContentUnitDef } from "../../core/models/ContentUnit";
@@ -16,15 +24,15 @@ import { coloredLog, createProgressBar } from "../../utils/cli-ui";
 
 export async function handleCrawlerCollect(deps: CliDeps, action: CliAction): Promise<void> {
   const crawler = deps.dispatcher.dispatch(action.url || "");
-  if (!crawler) { console.log("❌ 无匹配的特化爬虫"); return; }
+  if (!crawler) {
+    console.log("❌ 无匹配的特化爬虫");
+    return;
+  }
 
   const { default: inq } = await import("inquirer");
   const sm = new FileSessionManager();
   const allProfiles = await sm.listProfiles();
-  const profileChoices = [
-    { name: "🌐 游客态（不使用登录态）", value: "" },
-    ...allProfiles.map((p) => ({ name: `📂 ${p}`, value: p })),
-  ];
+  const profileChoices = [{ name: "🌐 游客态（不使用登录态）", value: "" }, ...allProfiles.map((p) => ({ name: `📂 ${p}`, value: p }))];
   const { chosenProfile } = await inq.prompt([{ type: "list", name: "chosenProfile", message: "选择登录会话：", choices: profileChoices }]);
 
   let session: import("../../core/ports/ISiteCrawler").CrawlerSession | undefined;
@@ -41,19 +49,35 @@ export async function handleCrawlerCollect(deps: CliDeps, action: CliAction): Pr
   }
 
   try {
-    const contentUnits = (crawler.name === "xiaohongshu") ? XHS_CONTENT_UNITS
-      : (crawler.name === "zhihu") ? ZHIHU_CONTENT_UNITS
-      : (crawler.name === "bilibili") ? BILI_CONTENT_UNITS
-      : (crawler.name === "tiktok") ? TT_CONTENT_UNITS
-      : (crawler.name === "boss_zhipin") ? BOSS_CONTENT_UNITS
-      : (crawler.name === "douyin") ? DOUYIN_CONTENT_UNITS
-      : (crawler.name === "xueshu") ? SCHOLAR_CONTENT_UNITS : null;
+    const contentUnits =
+      crawler.name === "xiaohongshu"
+        ? XHS_CONTENT_UNITS
+        : crawler.name === "zhihu"
+          ? ZHIHU_CONTENT_UNITS
+          : crawler.name === "bilibili"
+            ? BILI_CONTENT_UNITS
+            : crawler.name === "tiktok"
+              ? TT_CONTENT_UNITS
+              : crawler.name === "boss_zhipin"
+                ? BOSS_CONTENT_UNITS
+                : crawler.name === "douyin"
+                  ? DOUYIN_CONTENT_UNITS
+                  : crawler.name === "xueshu"
+                    ? SCHOLAR_CONTENT_UNITS
+                    : null;
 
     if (contentUnits && contentUnits.length > 0) {
-      const { mode } = await inq.prompt([{ type: "list", name: "mode", message: "选择采集模式：", choices: [
-        { name: "📦 组合采集（推荐）", value: "units" },
-        { name: "🔧 高级：自定义端点", value: "advanced" },
-      ]}]);
+      const { mode } = await inq.prompt([
+        {
+          type: "list",
+          name: "mode",
+          message: "选择采集模式：",
+          choices: [
+            { name: "📦 组合采集（推荐）", value: "units" },
+            { name: "🔧 高级：自定义端点", value: "advanced" },
+          ],
+        },
+      ]);
 
       if (mode === "units") return handleUnitsMode(crawler, contentUnits, action, session, deps);
 
@@ -65,27 +89,42 @@ export async function handleCrawlerCollect(deps: CliDeps, action: CliAction): Pr
     console.log(`   状态码: ${result.statusCode}`);
     console.log(`   耗时: ${result.responseTime}ms`);
     console.log(`   正文长度: ${result.body.length} 字符`);
-    const outDir = path.resolve("output", crawler.name);
-    await fs.mkdir(outDir, { recursive: true });
-    const outFile = path.join(outDir, `${crawler.name}-${Date.now()}.json`);
+    const tsDir = path.resolve("output", `${crawler.name}-${Date.now()}`);
+    await fs.mkdir(tsDir, { recursive: true });
+    const outFile = path.join(tsDir, "page.json");
     await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
-    console.log(`   已保存: ${outFile}`);
+    console.log(`   📁 ${tsDir}/`);
   } catch (e) {
     deps.logger.error(`${crawler.name} 采集失败`, { err: (e as Error).message });
     console.log("❌ 采集失败:", (e as Error).message);
   }
 }
 
-async function handleUnitsMode(crawler: ISiteCrawler, contentUnits: readonly ContentUnitDef[], action: CliAction, session: CrawlerSession | undefined, _deps: CliDeps): Promise<void> {
+async function handleUnitsMode(
+  crawler: ISiteCrawler,
+  contentUnits: readonly ContentUnitDef[],
+  action: CliAction,
+  session: CrawlerSession | undefined,
+  _deps: CliDeps,
+): Promise<void> {
   const { default: inq } = await import("inquirer");
   const unitChoices = contentUnits.map((u) => ({
-    name: `${u.label} — ${u.description}`, value: u.id, checked: false,
+    name: `${u.label} — ${u.description}`,
+    value: u.id,
+    checked: false,
   }));
-  const { selectedUnits } = await inq.prompt([{
-    type: "checkbox", name: "selectedUnits", message: "选择要采集的内容（空格切换选中，回车确认）：",
-    choices: unitChoices,
-  }]);
-  if (selectedUnits.length === 0) { console.log("⚠️ 未选择任何内容单元"); return; }
+  const { selectedUnits } = await inq.prompt([
+    {
+      type: "checkbox",
+      name: "selectedUnits",
+      message: "选择要采集的内容（空格切换选中，回车确认）：",
+      choices: unitChoices,
+    },
+  ]);
+  if (selectedUnits.length === 0) {
+    console.log("⚠️ 未选择任何内容单元");
+    return;
+  }
 
   const neededParams = new Set<string>();
   selectedUnits.forEach((u: string) => {
@@ -103,7 +142,7 @@ async function handleUnitsMode(crawler: ISiteCrawler, contentUnits: readonly Con
 
   if (resolved.bvid && !resolved.aid) {
     try {
-      const r = await biliFetch("https://api.bilibili.com/x/web-interface/view?bvid=" + resolved.bvid);
+      const r = await fetch("https://api.bilibili.com/x/web-interface/view?bvid=" + resolved.bvid);
       const d: { data?: { aid?: number; owner?: { mid?: number } } } = await r.json();
       if (d.data?.aid) resolved.aid = String(d.data.aid);
       if (d.data?.owner?.mid) resolved.mid = String(d.data.owner.mid);
@@ -128,29 +167,28 @@ async function handleUnitsMode(crawler: ISiteCrawler, contentUnits: readonly Con
   pb.update(selectedUnits.length);
   pb.stop();
 
-  const timestamp = Date.now();
-  const outDir = path.resolve("output", crawler.name);
-  await fs.mkdir(outDir, { recursive: true });
-  const jsonFile = path.join(outDir, `combined-${timestamp}.json`);
+  const tsDir = path.resolve("output", `${crawler.name}-${Date.now()}`);
+  await fs.mkdir(tsDir, { recursive: true });
+  const jsonFile = path.join(tsDir, "data.json");
   await fs.writeFile(jsonFile, JSON.stringify(results, null, 2), "utf-8");
   const xlsxBuf = exportResultsToXlsx(results);
-  const xlsxFile = path.join(outDir, `combined-${timestamp}.xlsx`);
+  const xlsxFile = path.join(tsDir, "data.xlsx");
   await fs.writeFile(xlsxFile, xlsxBuf);
   console.log(formatUnitResults(results));
-  console.log(`\n📁 JSON: ${jsonFile}`);
-  console.log(`📊 Excel: ${xlsxFile}`);
+  console.log(`\n📁 ${tsDir}/`);
 }
 
 async function handleAdvancedMode(crawler: ISiteCrawler, action: CliAction, session: CrawlerSession | undefined, deps: CliDeps): Promise<void> {
   const { default: inq } = await import("inquirer");
-  const statusIcon = (s: string) => s === "verified" ? "✅" : s === "risk_ctrl" ? "⛔" : "🔶";
-  const statusText = (s: string) => s === "verified" ? "" : s === "risk_ctrl" ? "(风控)" : "(签名待优化)";
+  const statusIcon = (s: string) => (s === "verified" ? "✅" : s === "risk_ctrl" ? "⛔" : "🔶");
+  const statusText = (s: string) => (s === "verified" ? "" : s === "risk_ctrl" ? "(风控)" : "(签名待优化)");
   const sigChoices = XhsApiEndpoints.map((e) => ({
     name: `${statusIcon(e.status ?? "sig_pending")} ${e.name} ${statusText(e.status ?? "sig_pending")}`.trim(),
     value: `sig:${e.name}`,
   }));
   const fallbackChoices = XhsFallbackEndpoints.map((e: { name: string }) => ({
-    name: `🟠 ${e.name} (页面提取)`, value: `fb:${e.name}`,
+    name: `🟠 ${e.name} (页面提取)`,
+    value: `fb:${e.name}`,
   }));
   const choices = [
     { name: "━━━ 签名直连 ━━━", value: "__sep1__", disabled: true },
@@ -174,28 +212,38 @@ async function handleAdvancedMode(crawler: ISiteCrawler, action: CliAction, sess
       paramsStr = p;
     }
     const paramsRecord: Record<string, string> = {};
-    paramsStr.split("&").filter(Boolean).forEach((pair) => {
-      const [k, ...vs] = pair.split("=");
-      if (k) paramsRecord[k] = decodeURIComponent(vs.join("="));
-    });
+    paramsStr
+      .split("&")
+      .filter(Boolean)
+      .forEach((pair) => {
+        const [k, ...vs] = pair.split("=");
+        if (k) paramsRecord[k] = decodeURIComponent(vs.join("="));
+      });
 
     let authMode: "logged_in" | "guest" = "logged_in";
     if (crawler.name === "xiaohongshu") {
-      const { mode } = await inq.prompt([{ type: "list", name: "mode", message: "认证模式：", choices: [
-        { name: "🔐 已登录（使用完整 session）", value: "logged_in" },
-        { name: "🌐 游客态（仅设备标识）", value: "guest" },
-      ]}]);
+      const { mode } = await inq.prompt([
+        {
+          type: "list",
+          name: "mode",
+          message: "认证模式：",
+          choices: [
+            { name: "🔐 已登录（使用完整 session）", value: "logged_in" },
+            { name: "🌐 游客态（仅设备标识）", value: "guest" },
+          ],
+        },
+      ]);
       authMode = mode;
     }
 
     const result = await (crawler as XhsCrawler).fetchApi(epName, paramsRecord, session, authMode);
-    const outDir = path.resolve("output", crawler.name);
-    await fs.mkdir(outDir, { recursive: true });
-    const outFile = path.join(outDir, `${crawler.name}-${epName}-${Date.now()}.json`);
+    const tsDir = path.resolve("output", `${crawler.name}-${Date.now()}`);
+    await fs.mkdir(tsDir, { recursive: true });
+    const outFile = path.join(tsDir, `${epName}.json`);
     await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
     console.log(`\n✅ ${crawler.name} - ${epName} (签名直连)`);
     console.log(`   耗时: ${result.responseTime}ms`);
-    console.log(`   已保存: ${outFile}`);
+    console.log(`   📁 ${tsDir}/${epName}.json`);
     if (result.headers["content-type"]?.includes("json")) {
       const body = JSON.parse(result.body);
       console.log(`   响应: code=${body.code} ${body.msg || ""}`);
@@ -207,23 +255,28 @@ async function handleAdvancedMode(crawler: ISiteCrawler, action: CliAction, sess
     const fbName = selected.slice(3);
     const { params: userParams } = await inq.prompt([{ type: "input", name: "params", message: "请输入参数（如 keyword=原神）：" }]);
     const paramsRecord: Record<string, string> = {};
-    userParams.split("&").filter(Boolean).forEach((pair: string) => {
-      const [k, ...vs] = pair.split("=");
-      if (k) paramsRecord[k] = decodeURIComponent(vs.join("="));
-    });
+    userParams
+      .split("&")
+      .filter(Boolean)
+      .forEach((pair: string) => {
+        const [k, ...vs] = pair.split("=");
+        if (k) paramsRecord[k] = decodeURIComponent(vs.join("="));
+      });
     try {
       const result = await (crawler as XhsCrawler).fetchPageData(fbName, paramsRecord, session);
-      const outDir = path.resolve("output", crawler.name);
-      await fs.mkdir(outDir, { recursive: true });
-      const outFile = path.join(outDir, `${crawler.name}-${fbName}-${Date.now()}.json`);
+      const tsDir = path.resolve("output", `${crawler.name}-${Date.now()}`);
+      await fs.mkdir(tsDir, { recursive: true });
+      const outFile = path.join(tsDir, `${fbName}.json`);
       await fs.writeFile(outFile, JSON.stringify(result, null, 2), "utf-8");
       console.log(`\n✅ ${crawler.name} - ${fbName} (页面提取)`);
       console.log(`   耗时: ${result.responseTime}ms`);
-      console.log(`   已保存: ${outFile}`);
+      console.log(`   📁 ${tsDir}/${fbName}.json`);
       try {
         const parsed = JSON.parse(result.body);
         console.log(`   提取数据预览: ${JSON.stringify(parsed).slice(0, 500)}`);
-      } catch { console.log(`   原始数据: ${result.body.slice(0, 300)}`); }
+      } catch {
+        console.log(`   原始数据: ${result.body.slice(0, 300)}`);
+      }
     } catch (e: any) {
       deps.logger.error("页面提取失败", { err: e.message });
       console.log("❌ 页面提取失败:", e.message);

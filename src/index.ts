@@ -10,6 +10,7 @@ import { TikTokCrawler } from "./adapters/crawlers/TikTokCrawler";
 import { BossZhipinCrawler } from "./adapters/crawlers/BossZhipinCrawler";
 import { DouyinCrawler } from "./adapters/crawlers/DouyinCrawler";
 import { BaiduScholarCrawler } from "./adapters/crawlers/BaiduScholarCrawler";
+import { MiyousheCrawler } from "./adapters/crawlers/MiyousheCrawler";
 import { CrawlerDispatcher } from "./core/services/CrawlerDispatcher";
 import { RoundRobinProxyProvider } from "./adapters/RoundRobinProxyProvider";
 import { FeatureFlags, applyFeatureFlags } from "./core/features";
@@ -33,6 +34,7 @@ import { handleToggleFeatures } from "./cli/handlers/toggle-features";
 import { handleExportComments } from "./cli/handlers/export-comments";
 import { handleExportXhsComments } from "./cli/handlers/export-xhs-comments";
 import { CliAction } from "./cli/types";
+import { registerAllSigners } from "./signer/signer-adapters";
 
 let globalProxyProvider: IProxyProvider | undefined;
 let chromeServiceInstance: import("./services/ChromeService").ChromeService | null = null;
@@ -64,7 +66,10 @@ function buildStatusLine(): string {
           if (!newest || st.mtime > newest.mtime) newest = { file: dir.name, mtime: st.mtime };
         }
       }
-      if (newest) { const ago = Math.floor((Date.now() - newest.mtime.getTime()) / 60000); parts.push(`📁 最近采集: ${ago}分钟前 (${newest.file})`); }
+      if (newest) {
+        const ago = Math.floor((Date.now() - newest.mtime.getTime()) / 60000);
+        parts.push(`📁 最近采集: ${ago}分钟前 (${newest.file})`);
+      }
     }
   } catch {}
   try {
@@ -100,21 +105,26 @@ function createCrawlerDispatcher(appCfg: Awaited<ReturnType<typeof loadAppConfig
   if (appCfg.crawlers?.boss_zhipin === "enabled") d.register(new BossZhipinCrawler(globalProxyProvider));
   if (appCfg.crawlers?.douyin === "enabled") d.register(new DouyinCrawler(globalProxyProvider));
   if (appCfg.crawlers?.xueshu === "enabled") d.register(new BaiduScholarCrawler(globalProxyProvider));
+  if (appCfg.crawlers?.miyoushe === "enabled") d.register(new MiyousheCrawler(globalProxyProvider));
   return d;
 }
 
 async function bootstrap() {
+  registerAllSigners();
   registerShutdown();
 
-  console.log(highlightTitle(`
+  console.log(
+    highlightTitle(`
 =============================================
   WebHarvester 逆向采集工具  v1.1.0
   低硬件适配 | 模块化解耦 | 工程化架构
 =============================================
-  `));
+  `),
+  );
 
   const appCfg = await loadAppConfig();
   if (appCfg.features) applyFeatureFlags(appCfg.features);
+  if (appCfg.logging?.format) process.env.WH_LOG_FORMAT = appCfg.logging.format;
 
   if (FeatureFlags.enableBackendService && appCfg.backendService) {
     configureBackendClient(appCfg.backendService.baseUrl, appCfg.backendService.timeout);
@@ -123,9 +133,12 @@ async function bootstrap() {
 
   if (FeatureFlags.enableProxyPool && appCfg.proxyPool) {
     globalProxyProvider = new RoundRobinProxyProvider(appCfg.proxyPool);
-    globalProxyProvider.warmup().then(() => {
-      console.log("✅ 代理预热完成，可用代理:", globalProxyProvider!.enabledCount);
-    }).catch(() => {});
+    globalProxyProvider
+      .warmup()
+      .then(() => {
+        console.log("✅ 代理预热完成，可用代理:", globalProxyProvider!.enabledCount);
+      })
+      .catch(() => {});
     globalProxyProvider.startHealthCheck();
   }
 
@@ -134,18 +147,21 @@ async function bootstrap() {
     const { ChromeService } = await import("./services/ChromeService");
     chromeServiceInstance = new ChromeService(appCfg.chromeService.port, appCfg.chromeService.chromePath, appCfg.chromeService.userDataDir);
     setChromeServiceInstance(chromeServiceInstance);
-    chromeServiceInstance.start().then(async () => {
-      BaseCrawler.chromeServicePort = chromeServiceInstance!.port;
-      try {
-        const { registerCdpBrowser } = await import("./services/BrowserProvider");
-        await registerCdpBrowser(chromeServiceInstance!.port);
-        console.log(`✅ ChromeService 已就绪 (端口 ${chromeServiceInstance!.port})`);
-      } catch {
-        // Bun 环境下 CDP WebSocket 超时是预期行为，由 single-harvest.ts 的 Node.js 子进程兜底
-      }
-    }).catch(() => {
-      console.error("❌ ChromeService 启动失败");
-    });
+    chromeServiceInstance
+      .start()
+      .then(async () => {
+        BaseCrawler.chromeServicePort = chromeServiceInstance!.port;
+        try {
+          const { registerCdpBrowser } = await import("./services/BrowserProvider");
+          await registerCdpBrowser(chromeServiceInstance!.port);
+          console.log(`✅ ChromeService 已就绪 (端口 ${chromeServiceInstance!.port})`);
+        } catch {
+          // Bun 环境下 CDP WebSocket 超时是预期行为，由 single-harvest.ts 的 Node.js 子进程兜底
+        }
+      })
+      .catch(() => {
+        console.error("❌ ChromeService 启动失败");
+      });
   }
 
   const logger = new ConsoleLogger();
@@ -228,18 +244,24 @@ async function handleBackendStatus(): Promise<void> {
 
 async function killChromeOnPort(port: number): Promise<void> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/json/version`, { timeout: 1000 } as any);
+    const res = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1000) });
     if (res.ok) {
       console.warn(`⚠️ 端口 ${port} 已被 Chrome 占用，尝试关闭...`);
       const { execSync } = await import("child_process");
-      execSync(`taskkill /f /im chrome.exe 2>nul`, { timeout: 3000 });
+      execSync("taskkill /f /im chrome.exe 2>nul", { timeout: 3000 });
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 500));
-        try { const r2 = await fetch(`http://127.0.0.1:${port}/json/version`, { timeout: 500 } as any); if (!r2.ok) break; }
-        catch { break; }
+        try {
+          const r2 = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(500) });
+          if (!r2.ok) break;
+        } catch {
+          break;
+        }
       }
     }
-  } catch { /* 端口无人占用 */ }
+  } catch {
+    /* 端口无人占用 */
+  }
 }
 
 bootstrap().catch((err) => {
