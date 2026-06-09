@@ -1,8 +1,9 @@
 import fs from "fs";
 import path from "path";
-import { ConsoleLogger } from "../adapters/ConsoleLogger.js";
-import { getChromeServiceHealth } from "../utils/chrome-service-bridge.js";
-import { FeatureFlags } from "../core/features.js";
+import type { ILogger } from "../core/ports/ILogger";
+import { ConsoleLogger } from "../adapters/ConsoleLogger";
+import { getChromeServiceHealth } from "../utils/chrome-service-bridge";
+import { FeatureFlags } from "../core/features";
 
 // ── Types ──
 
@@ -32,10 +33,10 @@ export const DEFAULT_DIAGNOSTICS_OPTIONS = {
 // ── DiagnosticsService ──
 
 export class DiagnosticsService {
-  private logger: ConsoleLogger;
+  private logger: ILogger;
   private options: typeof DEFAULT_DIAGNOSTICS_OPTIONS;
 
-  constructor(logger?: ConsoleLogger, options?: Partial<typeof DEFAULT_DIAGNOSTICS_OPTIONS>) {
+  constructor(logger?: ILogger, options?: Partial<typeof DEFAULT_DIAGNOSTICS_OPTIONS>) {
     this.logger = logger ?? new ConsoleLogger("info");
     this.options = { ...DEFAULT_DIAGNOSTICS_OPTIONS, ...options };
   }
@@ -68,9 +69,7 @@ export class DiagnosticsService {
       components.push({
         name: "ChromeService (CDP)",
         status: FeatureFlags.enableChromeService ? "warn" : "ok",
-        detail: FeatureFlags.enableChromeService
-          ? "ChromeService 已启用但未连接（CDP 9222 无响应）"
-          : "ChromeService 未启用（FeatureFlag）",
+        detail: FeatureFlags.enableChromeService ? "ChromeService 已启用但未连接（CDP 9222 无响应）" : "ChromeService 未启用（FeatureFlag）",
       });
     } else {
       components.push({
@@ -122,12 +121,14 @@ export class DiagnosticsService {
           if (entry.isDirectory()) walk(full);
           else if (entry.isFile()) {
             fileCount++;
-            try { totalBytes += fs.statSync(full).size; } catch {} // ok: ignored
+            try {
+              totalBytes += fs.statSync(full).size;
+            } catch {} // ok: ignored
           }
         }
       };
       walk(dir);
-      return { exists: true, fileCount, sizeMb: Math.round(totalBytes / (1024 * 1024) * 100) / 100 };
+      return { exists: true, fileCount, sizeMb: Math.round((totalBytes / (1024 * 1024)) * 100) / 100 };
     } catch {
       return { exists: false, fileCount: 0, sizeMb: 0 };
     }
@@ -137,9 +138,7 @@ export class DiagnosticsService {
     try {
       const dir = this.options.sessionsDir;
       if (!fs.existsSync(dir)) return { exists: false, count: 0 };
-      const files = fs.readdirSync(dir).filter(
-        (f) => f.endsWith(".session.json") || f.endsWith(".json"),
-      );
+      const files = fs.readdirSync(dir).filter((f) => f.endsWith(".session.json") || f.endsWith(".json"));
       return { exists: true, count: files.length };
     } catch {
       return { exists: false, count: 0 };

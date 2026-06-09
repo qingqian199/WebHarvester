@@ -1,4 +1,5 @@
 import * as BrowserPool from "../utils/BrowserPool";
+import type { ILogger } from "../core/ports/ILogger";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { FileSessionManager } from "../adapters/FileSessionManager";
 
@@ -14,6 +15,9 @@ const DEFAULT_SITES: Record<string, string> = {
   xiaohongshu: "https://www.xiaohongshu.com",
   zhihu: "https://www.zhihu.com",
   xueshu: "https://xueshu.baidu.com",
+  miyoushe: "https://www.miyoushe.com",
+  douyin: "https://www.douyin.com",
+  tiktok: "https://www.tiktok.com",
 };
 
 /**
@@ -40,15 +44,11 @@ export interface CookieSyncConfig {
  * 写入 FileSessionManager，使 API 直连环路也能使用最新登录态。
  */
 export class CookieSyncService {
-  private logger: ConsoleLogger;
+  private logger: ILogger;
   private sessionManager: FileSessionManager;
   private config: Required<CookieSyncConfig>;
 
-  constructor(
-    sessionManager?: FileSessionManager,
-    config?: CookieSyncConfig,
-    logger?: ConsoleLogger,
-  ) {
+  constructor(sessionManager?: FileSessionManager, config?: CookieSyncConfig, logger?: ILogger) {
     this.logger = logger ?? new ConsoleLogger("info");
     this.sessionManager = sessionManager ?? new FileSessionManager();
     this.config = {

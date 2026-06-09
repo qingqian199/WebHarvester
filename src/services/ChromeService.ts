@@ -1,10 +1,29 @@
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
-import os from "os";
 import fs from "fs";
-import fetch from "node-fetch";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { ConsoleNotifier } from "../utils/notifier";
+
+/** 尝试检测 Playwright 自带的 Chromium 路径 */
+function detectPlaywrightChromium(): string | null {
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  if (!home) return null;
+  const candidates = [path.join(home, "AppData", "Local", "ms-playwright"), path.join(home, ".cache", "ms-playwright")];
+  for (const dir of candidates) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const e of entries) {
+        if (!e.isDirectory() || !e.name.startsWith("chromium-")) continue;
+        const chromePath = path.join(dir, e.name, "chrome-win64", "chrome.exe");
+        if (fs.existsSync(chromePath)) return chromePath;
+        const chromePathAlt = path.join(dir, e.name, "chrome-linux", "chrome");
+        if (fs.existsSync(chromePathAlt)) return chromePathAlt;
+      }
+    } catch {}
+  }
+  return null;
+}
 
 const DEFAULT_CHROME_PATHS = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -15,7 +34,7 @@ const DEFAULT_CHROME_PATHS = [
   "/usr/bin/chromium",
 ];
 
-const DEFAULT_USER_DATA_DIR = path.join(os.tmpdir(), "webharvester-chrome-data");
+const DEFAULT_USER_DATA_DIR = path.join(process.cwd(), "chrome-data");
 
 export class ChromeService {
   private proc: ChildProcess | null = null;
@@ -41,11 +60,21 @@ export class ChromeService {
     this._userDataDir = userDataDir || process.env.WEBHARVESTER_CHROME_DATA_DIR || DEFAULT_USER_DATA_DIR;
   }
 
-  get port(): number { return this._port; }
-  get isReady(): boolean { return this._ready; }
-  get isDegraded(): boolean { return this._degraded; }
-  get uptime(): number { return this._ready ? Date.now() - this._startTime : 0; }
-  get restartCount(): number { return this._restartCount; }
+  get port(): number {
+    return this._port;
+  }
+  get isReady(): boolean {
+    return this._ready;
+  }
+  get isDegraded(): boolean {
+    return this._degraded;
+  }
+  get uptime(): number {
+    return this._ready ? Date.now() - this._startTime : 0;
+  }
+  get restartCount(): number {
+    return this._restartCount;
+  }
 
   /** 返回详细的健康状态报告 */
   getHealth(): { status: string; port: number; uptime: number; degraded: boolean; restartCount: number } {
@@ -64,6 +93,10 @@ export class ChromeService {
   }
 
   private detectChrome(): string {
+    // 优先使用 Playwright 自带的 Chromium（版本匹配，CDP 兼容）
+    const pw = detectPlaywrightChromium();
+    if (pw) return pw;
+    // 回退到系统 Chrome
     for (const p of DEFAULT_CHROME_PATHS) {
       try {
         if (fs.existsSync(p)) return p;
@@ -77,22 +110,52 @@ export class ChromeService {
     this.logger.info(`ChromeService 启动中 (端口 ${this._port})...`);
     this._startTime = Date.now();
 
-    this.proc = spawn(this._chromePath, [
+    // 性能优化的 Chrome 启动参数
+    const CHROME_ARGS = [
+      // CDP 调试
       `--remote-debugging-port=${this._port}`,
       "--remote-allow-origins=*",
       "--remote-debugging-address=127.0.0.1",
       `--user-data-dir=${this._userDataDir}`,
+
+      // 首次启动免配置
       "--no-first-run",
       "--no-default-browser-check",
-      "--disable-field-trial-config",
+
+      // 禁用后台服务（节省内存 ~200MB）
       "--disable-background-networking",
       "--disable-sync",
       "--disable-translate",
       "--disable-default-apps",
-      "--mute-audio",
+      "--disable-component-update",
+      "--disable-component-extensions-with-background-pages",
+      "--disable-background-timer-throttling",
+
+      // 禁用渲染优化（对爬虫无意义）
+      "--disable-renderer-backgrounding",
+      "--disable-backgrounding-occluded-windows",
+      "--disable-field-trial-config",
+
+      // 禁用 GPU 加速（节省显存，爬虫不需要）
       "--disable-gpu",
+      "--disable-software-rasterizer",
+
+      // 禁用崩溃上报
+      "--disable-breakpad",
+      "--disable-crash-reporter",
+      "--no-crash-upload",
+
+      // 其他
+      "--mute-audio",
       "--window-size=1280,720",
-    ], { stdio: "ignore", detached: false });
+    ];
+
+    // headless=new 模式：比旧 headless 更快，渲染更完整
+    if (process.env.WH_CHROME_HEADLESS !== "false") {
+      CHROME_ARGS.push("--headless=new");
+    }
+
+    this.proc = spawn(this._chromePath, CHROME_ARGS, { stdio: "ignore", detached: false });
 
     this.proc.on("exit", (code) => {
       this.logger.warn(`Chrome 进程退出 (code=${code})`);
@@ -135,7 +198,7 @@ export class ChromeService {
         this.logger.info("ChromeService 已自动恢复");
       }
     }, 10000);
-    if (typeof this.healthTimer === "object" && "unref" in this.healthTimer) (this.healthTimer as any).unref();
+    if (typeof this.healthTimer === "object" && "unref" in this.healthTimer) (this.healthTimer as NodeJS.Timeout).unref();
 
     // 新的 CDP 心跳检测（连接级）
     this.startHeartbeat();
@@ -146,7 +209,7 @@ export class ChromeService {
     if (this.heartbeatTimer) return;
     this.heartbeatTimer = setInterval(async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:${this._port}/json/version`, { timeout: 5000 } as any);
+        const res = await fetch(`http://127.0.0.1:${this._port}/json/version`, { signal: AbortSignal.timeout(5000) });
         if (res.status === 200) {
           this.consecutiveFailures = 0;
           if (!this._ready) {
@@ -166,7 +229,7 @@ export class ChromeService {
         this.restart();
       }
     }, this.heartbeatIntervalMs);
-    if (typeof this.heartbeatTimer === "object" && "unref" in this.heartbeatTimer) (this.heartbeatTimer as any).unref();
+    if (typeof this.heartbeatTimer === "object" && "unref" in this.heartbeatTimer) (this.heartbeatTimer as NodeJS.Timeout).unref();
   }
 
   /** 重启 Chrome。达到最大重启次数后标记 degraded */
@@ -175,7 +238,11 @@ export class ChromeService {
     this.stop();
     if (this._restartCount > this.maxRestarts) {
       this._degraded = true;
-      this.notifier.sendAlert("error", "🔴 ChromeService 达到最大重启次数", `已重启 ${this._restartCount} 次，标记为 degraded，爬虫将降级到 Playwright Stealth 模式`);
+      this.notifier.sendAlert(
+        "error",
+        "🔴 ChromeService 达到最大重启次数",
+        `已重启 ${this._restartCount} 次，标记为 degraded，爬虫将降级到 Playwright Stealth 模式`,
+      );
       return;
     }
     this.notifier.sendAlert("warn", "🔄 ChromeService 自动重启", `第 ${this._restartCount}/${this.maxRestarts} 次`);
@@ -195,10 +262,10 @@ export class ChromeService {
   }
 
   async getWebSocketUrl(): Promise<string> {
-    const res = await fetch(`http://127.0.0.1:${this._port}/json`, { timeout: 5000 });
+    const res = await fetch(`http://127.0.0.1:${this._port}/json`, { signal: AbortSignal.timeout(5000) });
     let list: Array<{ webSocketDebuggerUrl: string }>;
     try {
-      list = await res.json() as Array<{ webSocketDebuggerUrl: string }>;
+      list = (await res.json()) as Array<{ webSocketDebuggerUrl: string }>;
     } catch {
       throw new Error("Chrome /json 返回非 JSON 响应");
     }
@@ -208,10 +275,19 @@ export class ChromeService {
   }
 
   stop(): void {
-    if (this.healthTimer) { clearInterval(this.healthTimer); this.healthTimer = null; }
-    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     if (this.proc) {
-      try { this.proc.kill("SIGTERM"); this.logger.info("ChromeService 已停止"); } catch {}
+      try {
+        this.proc.kill("SIGTERM");
+        this.logger.info("ChromeService 已停止");
+      } catch {}
       this.proc = null;
     }
     this._ready = false;
@@ -233,7 +309,7 @@ export class ChromeService {
 
   private async checkHealthFast(): Promise<boolean> {
     try {
-      const res = await fetch(`http://127.0.0.1:${this._port}/json/version`, { timeout: 3000 } as any);
+      const res = await fetch(`http://127.0.0.1:${this._port}/json/version`, { signal: AbortSignal.timeout(3000) });
       return res.status === 200;
     } catch {
       return false;
