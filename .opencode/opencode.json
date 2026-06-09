@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "codegraph": {
+        "command": "codegraph",
+        "args": ["serve", "--mcp"],
+        "cwd": "C:\\Users\\qingqian\\Desktop\\web-harvester1"
+      }
+    }
+  }
+}
