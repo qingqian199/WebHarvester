@@ -1,11 +1,12 @@
 import type { ISessionManager } from "../core/ports/ISessionManager";
+import type { ILogger } from "../core/ports/ILogger";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { FileSessionManager } from "../adapters/FileSessionManager";
 import { registerMcpTools } from "./tools";
 import { McpServer } from "./protocol";
 
 export interface McpConfig {
-  logger?: ConsoleLogger;
+  logger?: ILogger;
   sessionManager?: ISessionManager;
 }
 
@@ -35,4 +36,3 @@ export function startMcpServer(config: McpConfig): McpServer {
 export function getMcpInstance(): McpServer | null {
   return _instance;
 }
-

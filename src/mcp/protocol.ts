@@ -1,5 +1,5 @@
 import readline from "readline";
-import { ConsoleLogger } from "../adapters/ConsoleLogger";
+import type { ILogger } from "../core/ports/ILogger";
 
 interface JsonRpcRequest {
   jsonrpc: "2.0";
@@ -25,7 +25,7 @@ export interface McpToolDefinition {
 interface McpServerOptions {
   name: string;
   version: string;
-  logger: ConsoleLogger;
+  logger: ILogger;
 }
 
 /**
