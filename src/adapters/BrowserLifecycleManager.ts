@@ -4,6 +4,7 @@ import { DEFAULT_ACTION_TIMEOUT_MS } from "../core/config/index";
 import { RealisticFingerprintProvider } from "./RealisticFingerprintProvider";
 import { SessionState } from "../core/ports/ISessionManager";
 import { NetworkRequest, PageLoadMetrics } from "../core/models";
+import { injectAntiDetection } from "../browser/anti-detection-injector";
 
 const ANTI_DETECT_PLATFORM = "Win32";
 const NETWORK_CAPTURE_TYPES = ["xhr", "fetch"];
@@ -27,7 +28,7 @@ export class BrowserLifecycleManager {
   private consoleMessages: Array<{ type: string; text: string }> = [];
   private pageErrors: Array<{ message: string; stack?: string }> = [];
 
-  constructor(private readonly logger: ILogger) { }
+  constructor(private readonly logger: ILogger) {}
 
   startNetworkCapture(enableFullCapture?: boolean, captureAllTypes?: boolean): void {
     if (!this.page) throw new Error("Page not initialized");
@@ -52,9 +53,7 @@ export class BrowserLifecycleManager {
           entry.statusCode = response.status();
           entry.completedAt = Date.now();
           const rawBody = await response.text().catch(() => null);
-          entry.responseBody = captureXhr && rawBody && rawBody.length > 204800
-            ? rawBody.slice(0, 204800)
-            : rawBody;
+          entry.responseBody = captureXhr && rawBody && rawBody.length > 204800 ? rawBody.slice(0, 204800) : rawBody;
           await route.fulfill({ response });
         } else {
           this.ensureEntry(key, url, method, req, resourceType);
@@ -103,7 +102,7 @@ export class BrowserLifecycleManager {
       this.pageMetrics = await this.page.evaluate(() => {
         const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
         if (!nav) return null;
-        const fcp = performance.getEntriesByType("paint").find(e => e.name === "first-contentful-paint") as PerformancePaintTiming | undefined;
+        const fcp = performance.getEntriesByType("paint").find((e) => e.name === "first-contentful-paint") as PerformancePaintTiming | undefined;
         return {
           navigationStart: nav.startTime,
           domContentLoadedEventEnd: nav.domContentLoadedEventEnd,
@@ -188,43 +187,11 @@ export class BrowserLifecycleManager {
     this.page = await this.context.newPage();
     this.startPageDiagnostics();
 
+    // 注入统一反检测脚本（替换内联版本，新增 Canvas/WebGL/Audio 指纹保护）
+    await injectAntiDetection(this.page);
+    // 额外注入 platform 覆盖（与指纹提供器生成的平台一致）
     await this.page.addInitScript((platform: string) => {
-      // 隐藏自动化标志
-      Object.defineProperty(navigator, "webdriver", { get: () => false });
-
-      // 模拟真实插件列表
-      const pluginData = [
-        { name: "Chrome PDF Plugin", filename: "internal-pdf-viewer" },
-        { name: "Chrome PDF Viewer", filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai" },
-        { name: "Native Client", filename: "internal-nacl-plugin" },
-      ];
-      Object.defineProperty(navigator, "plugins", {
-        get: () => ({
-          length: pluginData.length,
-          item: (i: number) => pluginData[i] || null,
-          namedItem: (n: string) => pluginData.find(p => p.name === n) || null,
-          refresh: () => {},
-          ...Object.fromEntries(pluginData.map((p, i) => [i, p])),
-        }),
-      });
-
-      // 覆盖 permissions.query 不暴露自动化。
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Playwright sandboxes navigator.permissions
-      const originalQuery = (navigator as any).permissions.query.bind((navigator as any).permissions);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Playwright's navigator.permissions.query API
-      (navigator as any).permissions.query = (p: any) =>
-        p.name === "notifications"
-          ? Promise.resolve({ state: "denied" })
-          : originalQuery(p);
-
-      // 覆盖 languages 为正常值
-      Object.defineProperty(navigator, "languages", { get: () => ["zh-CN", "zh", "en"] });
-
-      // 覆盖 platform
       Object.defineProperty(navigator, "platform", { get: () => platform });
-
-      // 覆盖硬件并发数
-      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
     }, ANTI_DETECT_PLATFORM);
 
     this.startNetworkCapture(enableFullCapture, captureAllTypes);
@@ -237,9 +204,7 @@ export class BrowserLifecycleManager {
         path: c.path || "/",
         httpOnly: c.httpOnly,
         secure: c.secure,
-        sameSite: ["Strict", "Lax", "None"].includes(String(c.sameSite))
-          ? c.sameSite as "Strict" | "Lax" | "None"
-          : undefined,
+        sameSite: ["Strict", "Lax", "None"].includes(String(c.sameSite)) ? (c.sameSite as "Strict" | "Lax" | "None") : undefined,
       }));
       await this.context.addCookies(cookies);
     }
@@ -255,26 +220,28 @@ export class BrowserLifecycleManager {
   }
 
   /** 从已存在的 BrowserContext 创建页面（复用池化浏览器，反检测脚本通过 addInitScript 注入）。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async attachToContext(context: any, url: string, sessionState?: SessionState, pageSetup?: (page: any) => Promise<void>): Promise<void> {
     this.capturedRequests.clear();
     this.isNetworkCaptureEnabled = false;
     this.consoleMessages = [];
     this.pageErrors = [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.context = context as any;
     this.pooled = true;
     this.page = await context.newPage();
     this.startPageDiagnostics();
 
     if (sessionState) {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cookies = sessionState.cookies.map((c: any) => ({
-        name: c.name, value: c.value,
+        name: c.name,
+        value: c.value,
         domain: c.domain.startsWith(".") ? c.domain : `.${c.domain}`,
         path: c.path || "/",
-        httpOnly: c.httpOnly, secure: c.secure,
-        sameSite: ["Strict", "Lax", "None"].includes(String(c.sameSite)) ? c.sameSite as "Strict" | "Lax" | "None" : undefined,
+        httpOnly: c.httpOnly,
+        secure: c.secure,
+        sameSite: ["Strict", "Lax", "None"].includes(String(c.sameSite)) ? (c.sameSite as "Strict" | "Lax" | "None") : undefined,
       }));
       await context.addCookies(cookies);
     }
@@ -291,11 +258,28 @@ export class BrowserLifecycleManager {
   private pooled = false;
 
   /** 标记为池化模式：close() 只关闭 page，不关闭 context/browser。 */
-  markPooled(): void { this.pooled = true; }
+  markPooled(): void {
+    this.pooled = true;
+  }
 
   /** 设置 Browser 实例（用于 CDP 连接模式下注入外部 browser 引用）。 */
   setBrowser(b: any): void {
     this.browser = b;
+  }
+
+  /** 设置 Page 实例（用于 BaiduScholarCrawler 等自定义启动流程）。 */
+  setPage(page: Page): void {
+    this.page = page;
+  }
+
+  /** 设置 BrowserContext 实例（用于 CDP 连接模式）。 */
+  setContext(context: BrowserContext): void {
+    this.context = context;
+  }
+
+  /** 获取 BrowserContext 实例（用于 CDP 连接模式）。 */
+  getContext(): BrowserContext | null {
+    return this.context;
   }
 
   /** 关闭并清空网络捕获路由。 */

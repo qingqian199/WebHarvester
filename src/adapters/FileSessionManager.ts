@@ -1,6 +1,5 @@
 import fs from "fs/promises";
 import path from "path";
-import fetch from "node-fetch";
 import { ISessionManager, SessionState, AccountInfo, SessionValidation } from "../core/ports/ISessionManager";
 import { BizError } from "../core/error/BizError";
 import { ErrorCode } from "../core/error/ErrorCode";
@@ -145,9 +144,7 @@ export class FileSessionManager implements ISessionManager {
           ...c,
           value: encryptField(c.value, key),
         })),
-        localStorage: Object.fromEntries(
-          Object.entries(mergedState.localStorage).map(([k, v]) => [k, encryptField(v, key)]),
-        ),
+        localStorage: Object.fromEntries(Object.entries(mergedState.localStorage).map(([k, v]) => [k, encryptField(v, key)])),
       };
       await fs.mkdir(this.domainDir(domain), { recursive: true });
       await fs.writeFile(filePath, JSON.stringify(encrypted, null, 2), "utf-8");
@@ -161,9 +158,7 @@ export class FileSessionManager implements ISessionManager {
    * 匹配依据：name + domain + path 三元组。
    */
   private mergeCookieState(existing: SessionState, incoming: SessionState): SessionState {
-    const oldCookies = new Map(
-      existing.cookies.map((c) => [`${c.name}|${c.domain}|${c.path}`, c]),
-    );
+    const oldCookies = new Map(existing.cookies.map((c) => [`${c.name}|${c.domain}|${c.path}`, c]));
     for (const c of incoming.cookies) {
       const key = `${c.name}|${c.domain}|${c.path}`;
       if (c.value) {
@@ -382,8 +377,8 @@ export class FileSessionManager implements ISessionManager {
       const res = await fetch(strategy.url, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-          "Cookie": cookieStr,
-          "Referer": "https://www.bilibili.com/",
+          Cookie: cookieStr,
+          Referer: "https://www.bilibili.com/",
         },
       });
 
@@ -392,11 +387,11 @@ export class FileSessionManager implements ISessionManager {
           await this.markInvalid(domain, accountId);
           return { valid: false, detail: "知乎 Cookie 已过期 (HTTP 401)" };
         }
-        const body = await res.json() as any;
+        const body = (await res.json()) as Record<string, any>;
         return { valid: true, detail: `知乎用户: ${body?.data?.name || body?.name || "未知"}` };
       }
 
-      const body = await res.json() as any;
+      const body = (await res.json()) as Record<string, any>;
       const valid = strategy.extract(body);
 
       if (valid) {

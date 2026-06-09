@@ -1,5 +1,5 @@
-import { ILogger } from "../core/ports/ILogger.js";
-import { getTraceId } from "../utils/log-context.js";
+import { ILogger } from "../core/ports/ILogger";
+import { getTraceId } from "../utils/log-context";
 import chalk from "chalk";
 
 const LOG_ORDER: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
@@ -14,13 +14,18 @@ function getFormat(): LogFormat {
 function getGlobalLevel(): "debug" | "info" | "warn" | "error" {
   const env = process.env.WH_LOG_LEVEL || process.env.LOG_LEVEL || "info";
   const valid = ["debug", "info", "warn", "error"];
-  return valid.includes(env.toLowerCase()) ? env.toLowerCase() as any : "info";
+  return valid.includes(env.toLowerCase()) ? (env.toLowerCase() as "debug" | "info" | "warn" | "error") : "info";
 }
 
 function getDebugModules(): Set<string> {
   const env = process.env.WH_LOG_DEBUG_MODULES || "";
   if (!env) return new Set();
-  return new Set(env.split(",").map((s) => s.trim()).filter(Boolean));
+  return new Set(
+    env
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
 }
 
 export class ConsoleLogger implements ILogger {
@@ -46,7 +51,9 @@ export class ConsoleLogger implements ILogger {
     this.format = getFormat();
   }
 
-  setTraceId(id: string): void { this.instanceTraceId = id; }
+  setTraceId(id: string): void {
+    this.instanceTraceId = id;
+  }
   setModule(name: string): void {
     this.moduleName = name;
     if (name && getDebugModules().has(name)) this.moduleDebug = true;
@@ -63,10 +70,13 @@ export class ConsoleLogger implements ILogger {
 
   private baseMeta(level: string, meta?: Record<string, unknown>): Record<string, unknown> {
     return {
-      timestamp: new Date().toISOString(), level,
+      timestamp: new Date().toISOString(),
+      level,
       ...(this.moduleName ? { module: this.moduleName } : {}),
       ...(this.resolvedTraceId() ? { traceId: this.resolvedTraceId() } : {}),
-      ...meta, message: meta?.message || "",
+      // meta fields go first so explicit fields above act as immutable base
+      ...Object.fromEntries(Object.entries(meta ?? {}).filter(([k]) => !["timestamp", "level", "module", "traceId"].includes(k))),
+      message: meta?.message ?? "",
     };
   }
 
@@ -81,12 +91,22 @@ export class ConsoleLogger implements ILogger {
       const color = colorMap[level] || chalk.white;
       const metaStr = meta && Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : "";
       const fn = level === "error" ? console.error : level === "warn" ? console.warn : level === "debug" ? console.debug : console.log;
-      fn(`${color(`[${level.toUpperCase()}]`)} ${this.moduleName ? chalk.magenta(`[${this.moduleName}]`) : ""} ${this.resolvedTraceId() ? chalk.gray(`[${this.resolvedTraceId()}]`) : ""} ${message}${metaStr}`);
+      fn(
+        `${color(`[${level.toUpperCase()}]`)} ${this.moduleName ? chalk.magenta(`[${this.moduleName}]`) : ""} ${this.resolvedTraceId() ? chalk.gray(`[${this.resolvedTraceId()}]`) : ""} ${message}${metaStr}`,
+      );
     }
   }
 
-  debug(message: string, meta?: Record<string, unknown>): void { this.output("debug", message, meta); }
-  info(message: string, meta?: Record<string, unknown>): void { this.output("info", message, meta); }
-  warn(message: string, meta?: Record<string, unknown>): void { this.output("warn", message, meta); }
-  error(message: string, meta?: Record<string, unknown>): void { this.output("error", message, meta); }
+  debug(message: string, meta?: Record<string, unknown>): void {
+    this.output("debug", message, meta);
+  }
+  info(message: string, meta?: Record<string, unknown>): void {
+    this.output("info", message, meta);
+  }
+  warn(message: string, meta?: Record<string, unknown>): void {
+    this.output("warn", message, meta);
+  }
+  error(message: string, meta?: Record<string, unknown>): void {
+    this.output("error", message, meta);
+  }
 }
