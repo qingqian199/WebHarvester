@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import type { ILogger } from "../core/ports/ILogger";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { getMixinKeyEncTabId } from "../utils/crypto/bilibili-signer";
 
@@ -32,11 +33,11 @@ const NAV_API = "https://api.bilibili.com/x/web-interface/nav";
  * 4. 提供 setKeys() 方法供测试覆盖或手动注入
  */
 export class WbiKeyManager {
-  private logger: ConsoleLogger;
+  private logger: ILogger;
   private cache: WbiKeyCache | null = null;
   private refreshPromise: Promise<void> | null = null;
 
-  constructor(logger?: ConsoleLogger) {
+  constructor(logger?: ILogger) {
     this.logger = logger ?? new ConsoleLogger("info");
   }
 
@@ -124,7 +125,7 @@ export class WbiKeyManager {
     const res = await fetch(NAV_API, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-        "Referer": "https://www.bilibili.com/",
+        Referer: "https://www.bilibili.com/",
       },
     });
 
@@ -154,23 +155,38 @@ export class WbiKeyManager {
       return;
     }
 
-    if (body.code !== 0 || !body.data?.wbi_img) {
-      this.logger.error(`⚠️ nav 接口返回异常: code=${body.code}, 无 wbi_img 字段`);
-      this.logger.error(`📦 原始 nav 响应: ${JSON.stringify(body).slice(0, 1000)}`);
-      if (this.cache) {
-        this.logger.warn("♻️ 保留旧缓存密钥继续工作");
-        return;
-      }
-      try {
-        const raw = await fs.readFile(CACHE_PATH, "utf-8");
-        const fileCache: WbiKeyCache = JSON.parse(raw);
-        if (fileCache.img_key && fileCache.sub_key) {
-          this.cache = fileCache;
-          this.logger.info("✅ 已从文件恢复过期密钥继续工作");
+    // 即使 code ≠ 0（如 -101 未登录），wbi_img 字段仍可能存在，尝试提取
+    if (body.code !== 0) {
+      if (body.data?.wbi_img?.img_url && body.data?.wbi_img?.sub_url) {
+        // wbi_img 在未登录态下也可能返回，尝试提取
+        this.logger.info(`⚠️ nav 接口 code=${body.code}，但 wbi_img 存在，尝试提取`);
+      } else {
+        this.logger.error(`⚠️ nav 接口返回异常: code=${body.code}, 无 wbi_img 字段`);
+        this.logger.error(`📦 原始 nav 响应: ${JSON.stringify(body).slice(0, 1000)}`);
+        if (this.cache) {
+          this.logger.warn("♻️ 保留旧缓存密钥继续工作");
           return;
         }
-      } catch {}
-      throw new Error(`nav 接口业务异常: ${JSON.stringify(body)}`);
+        try {
+          const raw = await fs.readFile(CACHE_PATH, "utf-8");
+          const fileCache: WbiKeyCache = JSON.parse(raw);
+          if (fileCache.img_key && fileCache.sub_key) {
+            this.cache = fileCache;
+            this.logger.info("✅ 已从文件恢复过期密钥继续工作");
+            return;
+          }
+        } catch {}
+        throw new Error(`nav 接口业务异常: ${JSON.stringify(body)}`);
+      }
+    }
+
+    if (!body.data?.wbi_img) {
+      this.logger.error("⚠️ nav 响应缺少 wbi_img 字段");
+      if (this.cache) {
+        this.logger.warn("♻️ 保留旧缓存");
+        return;
+      }
+      throw new Error("nav 接口未返回 wbi_img");
     }
 
     const imgUrl: string = body.data.wbi_img.img_url || "";

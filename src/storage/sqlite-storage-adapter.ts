@@ -121,11 +121,14 @@ export class SqliteStorageAdapter implements IStorageAdapter {
 
   /** 获取总记录数（可选带 domain 过滤）。 */
   count(domain?: string): number {
+    interface CountRow {
+      cnt: number;
+    }
     if (domain) {
-      const row = this.db.prepare("SELECT COUNT(*) as cnt FROM results WHERE domain = ?").get(domain) as any;
+      const row = this.db.prepare("SELECT COUNT(*) as cnt FROM results WHERE domain = ?").get(domain) as CountRow;
       return row?.cnt ?? 0;
     }
-    const row = this.db.prepare("SELECT COUNT(*) as cnt FROM results").get() as any;
+    const row = this.db.prepare("SELECT COUNT(*) as cnt FROM results").get() as CountRow;
     return row?.cnt ?? 0;
   }
 

@@ -1,6 +1,6 @@
 import { Page, BrowserContext } from "playwright";
 import { BrowserLifecycleManager } from "../adapters/BrowserLifecycleManager";
-import { ILogger } from "../core/ports/ILogger";
+import type { ILogger } from "../core/ports/ILogger";
 import { ISessionManager, SessionState } from "../core/ports/ISessionManager";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { captureSessionFromPage } from "./session-helper";
@@ -31,9 +31,14 @@ const NO_LOGIN_SELECTORS = [
   ".bili-header__bar-login-btn, .unlogin",
 ];
 const LOGGED_IN_SELECTORS = [
-  ".user-avatar", ".header-user-avatar", ".user-name",
-  ".user-info", ".profile", ".logout",
-  "[class*=\"user-center\"]", "[class*=\"logged-in\"]",
+  ".user-avatar",
+  ".header-user-avatar",
+  ".user-name",
+  ".user-info",
+  ".profile",
+  ".logout",
+  "[class*=\"user-center\"]",
+  "[class*=\"logged-in\"]",
 ];
 
 /** 登录态守卫。管理会话的加载、验证和刷新流程。 */
@@ -94,11 +99,14 @@ export class AuthGuard {
 
   /** 通过 DOM 元素检测登录状态 */
   private async isLoggedInByElement(page: Page): Promise<boolean> {
-    return page.evaluate(({ noLogin, loggedIn }) => {
-      const hasNoLogin = document.querySelectorAll(noLogin.join(",")).length > 0;
-      const hasLoggedIn = document.querySelectorAll(loggedIn.join(",")).length > 0;
-      return hasLoggedIn && !hasNoLogin;
-    }, { noLogin: NO_LOGIN_SELECTORS, loggedIn: LOGGED_IN_SELECTORS });
+    return page.evaluate(
+      ({ noLogin, loggedIn }) => {
+        const hasNoLogin = document.querySelectorAll(noLogin.join(",")).length > 0;
+        const hasLoggedIn = document.querySelectorAll(loggedIn.join(",")).length > 0;
+        return hasLoggedIn && !hasNoLogin;
+      },
+      { noLogin: NO_LOGIN_SELECTORS, loggedIn: LOGGED_IN_SELECTORS },
+    );
   }
 
   private async verifySession(session: SessionState, verifyUrl: string): Promise<boolean> {
@@ -150,14 +158,14 @@ export class AuthGuard {
       return false;
     };
 
-    if (!(await hasLoginBtn()) && await this.verifyLoginState(page, initialUrl)) return;
+    if (!(await hasLoginBtn()) && (await this.verifyLoginState(page, initialUrl))) return;
 
     while (Date.now() - startTime < MANUAL_LOGIN_TIMEOUT_MS) {
       await new Promise((r) => setTimeout(r, LOGIN_SUCCESS_POLL_MS));
       try {
         if (isUrlRedirected(page.url(), initialUrl, this.authConfig.successUrlPattern)) return;
         if (await hasValidAuthCookie(page.context(), this.authConfig.cookieCheckWords)) return;
-        if (!(await hasLoginBtn()) && await this.isLoggedInByElement(page)) return;
+        if (!(await hasLoginBtn()) && (await this.isLoggedInByElement(page))) return;
       } catch {
         continue;
       }

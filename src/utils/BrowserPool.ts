@@ -1,12 +1,11 @@
-import { chromium, Browser, BrowserContext, Page } from "playwright";
+import { chromium, Browser, BrowserContext, Page, BrowserContextOptions } from "playwright";
 import { injectAntiDetection } from "../browser/anti-detection-injector";
+import { RealisticFingerprintProvider } from "../adapters/RealisticFingerprintProvider";
 
 /** 页面池死锁错误：所有页面都在 waiting 状态，无法获取新页面。 */
 export class PoolDeadlockError extends Error {
   constructor(browserId: string, maxPages: number, waiting: number) {
-    super(
-      `Browser [${browserId}] 页面池死锁: max=${maxPages}, waiting=${waiting}, 所有页面均处于验证码等待状态`,
-    );
+    super(`Browser [${browserId}] 页面池死锁: max=${maxPages}, waiting=${waiting}, 所有页面均处于验证码等待状态`);
     this.name = "PoolDeadlockError";
   }
 }
@@ -41,6 +40,27 @@ let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 let idleTimeoutMs = 300000;
 let factory: ((site: string) => Promise<{ browser: Browser; context: BrowserContext }>) | null = null;
 
+function extractChromeVersion(ua: string): string {
+  const m = ua.match(/Chrome\/(\d+)\./);
+  return m ? m[1] : "124";
+}
+
+/** 根据站点名生成反检测浏览器上下文选项 */
+export function buildBrowserContextOptions(_site?: string): BrowserContextOptions {
+  const fp = new RealisticFingerprintProvider().getFingerprint();
+  return {
+    viewport: fp.viewport,
+    locale: fp.locale,
+    userAgent: fp.userAgent,
+    extraHTTPHeaders: {
+      "Accept-Language": fp.acceptLanguage,
+      "sec-ch-ua": `"Chromium";v="${extractChromeVersion(fp.userAgent)}", "Google Chrome";v="${extractChromeVersion(fp.userAgent)}", "Not-A.Brand";v="99"`,
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": `"${fp.platform === "Win32" ? "Windows" : fp.platform === "MacIntel" ? "macOS" : "Linux"}"`,
+    },
+  };
+}
+
 function getDefaultFactory() {
   return async (_site: string) => {
     const browser = await chromium.launch({
@@ -50,9 +70,11 @@ function getDefaultFactory() {
         "--no-default-browser-check",
         "--no-first-run",
         "--disable-dev-shm-usage",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--disable-web-security",
       ],
     });
-    const context = await browser.newContext();
+    const context = await browser.newContext(buildBrowserContextOptions(_site));
     return { browser, context };
   };
 }
@@ -107,7 +129,10 @@ function startCleanupTimer(): void {
 
 /** 关闭所有浏览器。 */
 export async function destroyAll(): Promise<void> {
-  if (cleanupTimer) { clearInterval(cleanupTimer); cleanupTimer = null; }
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
   for (const [, entry] of pool) {
     await entry.browser.close().catch(() => {});
   }
@@ -115,10 +140,14 @@ export async function destroyAll(): Promise<void> {
 }
 
 /** 当前池大小。 */
-export function poolSize(): number { return pool.size; }
+export function poolSize(): number {
+  return pool.size;
+}
 
 /** 获取所有站点名。 */
-export function poolSites(): string[] { return [...pool.keys()]; }
+export function poolSites(): string[] {
+  return [...pool.keys()];
+}
 
 /** 直接设置池条目（供 ChromeService CDP 注册使用）。 */
 export function setPoolEntry(site: string, browser: Browser, context: BrowserContext, lastUsedAt?: number): void {

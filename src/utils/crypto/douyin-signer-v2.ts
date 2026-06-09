@@ -2,8 +2,6 @@
  * 抖音 x-secsdk-web-signature 签名客户端 v2。
  * 通过后端 DouyinSignService 获取浏览器运行时签名。
  */
-import fetch from "node-fetch";
-
 let baseUrl = "http://127.0.0.1:3001";
 let timeout = 5000;
 
@@ -14,8 +12,8 @@ export function configureDouyinSignClient(url: string, t?: number): void {
 
 export async function isDouyinSignServiceReady(): Promise<boolean> {
   try {
-    const res = await fetch(`${baseUrl}/api/douyin/health`, { timeout: 2000 } as any);
-    const data = await res.json() as any;
+    const res = await fetch(`${baseUrl}/api/douyin/health`, { signal: AbortSignal.timeout(2000) });
+    const data = (await res.json()) as Record<string, any>;
     return data.status === "ready";
   } catch {
     return false;
@@ -30,9 +28,9 @@ export async function isDouyinSignServiceReady(): Promise<boolean> {
  */
 export async function getDouyinSignature(endpoint: string): Promise<string> {
   const url = `${baseUrl}/api/douyin/sign?endpoint=${encodeURIComponent(endpoint)}`;
-  const res = await fetch(url, { timeout } as any);
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeout) });
   if (res.status === 503) throw new Error("抖音签名服务尚未就绪");
   if (res.status === 404) throw new Error(`签名未找到: ${endpoint}`);
-  const data = await res.json() as any;
-  return data.signature;
+  const data = (await res.json()) as Record<string, any>;
+  return data.signature as string;
 }

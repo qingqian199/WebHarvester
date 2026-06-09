@@ -1,5 +1,3 @@
-import fetch from "node-fetch";
-
 const BASE_URL_DEFAULT = "http://localhost:3001";
 const TIMEOUT_DEFAULT = 30000;
 
@@ -48,7 +46,7 @@ async function request<T>(path: string, options?: { method?: string; body?: unkn
         Accept: "application/json",
       },
       body: options?.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal as any,
+      signal: controller.signal,
     });
 
     if (!res.ok) {
@@ -110,12 +108,24 @@ export async function getDouyinSignature(endpoint: string): Promise<{ endpoint: 
 
 // ── 小红书签名 ──
 
-export async function xhsSignRequest(payload: { apiPath: string; data?: string; cookies?: string; userAgent?: string; platform?: string }): Promise<any> {
+export async function xhsSignRequest(payload: {
+  apiPath: string;
+  data?: string;
+  cookies?: string;
+  userAgent?: string;
+  platform?: string;
+}): Promise<any> {
   return request("/api/xiaohongshu/sign", { method: "POST", body: payload });
 }
 
 // ── TikTok 签名 ──
 
-export async function ttSignRequest(payload: { url: string; method?: string; body?: string; headers?: Record<string, string>; cookie?: string }): Promise<any> {
+export async function ttSignRequest(payload: {
+  url: string;
+  method?: string;
+  body?: string;
+  headers?: Record<string, string>;
+  cookie?: string;
+}): Promise<any> {
   return request("/api/tiktok/sign", { method: "POST", body: payload });
 }

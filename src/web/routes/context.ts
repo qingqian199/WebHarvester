@@ -1,10 +1,10 @@
 import http from "http";
-import { ConsoleLogger } from "../../adapters/ConsoleLogger";
+import type { ILogger } from "../../core/ports/ILogger";
 import { FileSessionManager } from "../../adapters/FileSessionManager";
 import { ITaskQueue } from "../../core/ports/ITaskQueue";
 
 export interface ServerContext {
-  logger: ConsoleLogger;
+  logger: ILogger;
   sessionManager: FileSessionManager;
   getTaskQueue: () => ITaskQueue | null;
   jwtSecret: string;

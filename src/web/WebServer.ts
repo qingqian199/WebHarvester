@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import type { ILogger } from "../core/ports/ILogger";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
 import { FileSessionManager } from "../adapters/FileSessionManager";
 import { XhsCrawler } from "../adapters/crawlers/XhsCrawler";
@@ -29,7 +30,7 @@ const CONFIG_PATH = path.resolve("./config.json");
 export class WebServer {
   private server: http.Server | null = null;
   private readonly port: number;
-  private readonly logger: ConsoleLogger;
+  private readonly logger: ILogger;
   readonly sessionManager: FileSessionManager;
   taskQueue: ITaskQueue | null = null;
   private jwtSecret: string = "";
@@ -40,7 +41,7 @@ export class WebServer {
   private readonly LOGIN_LOCK_MS: number;
   sessionContext: { lcm: any; page: any; profile: string; loginUrl: string } | null = null;
 
-  constructor(logger?: ConsoleLogger, sessionManager?: FileSessionManager, port?: number) {
+  constructor(logger?: ILogger, sessionManager?: FileSessionManager, port?: number) {
     this.logger = logger ?? new ConsoleLogger();
     this.sessionManager = sessionManager ?? new FileSessionManager();
     this.port = port ?? 3000;
@@ -130,14 +131,17 @@ export class WebServer {
   }
 
   private startLoginAttemptsCleanup(): void {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      for (const [ip, record] of this.loginAttempts) {
-        if (now >= record.lockUntil) {
-          this.loginAttempts.delete(ip);
+    const interval = setInterval(
+      () => {
+        const now = Date.now();
+        for (const [ip, record] of this.loginAttempts) {
+          if (now >= record.lockUntil) {
+            this.loginAttempts.delete(ip);
+          }
         }
-      }
-    }, 30 * 60 * 1000);
+      },
+      30 * 60 * 1000,
+    );
     if (typeof interval === "object" && "unref" in interval) {
       interval.unref();
     }

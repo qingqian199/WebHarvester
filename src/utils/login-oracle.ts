@@ -1,9 +1,9 @@
 import { Page } from "playwright";
 import { BrowserLifecycleManager } from "../adapters/BrowserLifecycleManager";
 import { FileSessionManager } from "../adapters/FileSessionManager";
-import { ILogger } from "../core/ports/ILogger";
-import { SessionState } from "../core/ports/ISessionManager";
+import type { ILogger } from "../core/ports/ILogger";
 import { ConsoleLogger } from "../adapters/ConsoleLogger";
+import { SessionState } from "../core/ports/ISessionManager";
 import { NetworkRequest, ElementItem } from "../core/models";
 import { filterApiRequests } from "../core/rules";
 import { captureSessionFromPage } from "./session-helper";
@@ -84,8 +84,10 @@ export function analyzeLoginForm(elements: ElementItem[], requests: NetworkReque
     const autocomplete = (el.attributes.autocomplete || "").toLowerCase();
 
     const isUsernameField =
-      type === "email" || type === "tel" ||
-      autocomplete === "username" || autocomplete === "email" ||
+      type === "email" ||
+      type === "tel" ||
+      autocomplete === "username" ||
+      autocomplete === "email" ||
       ["user", "account", "email", "mail", "phone", "mobile", "login", "logon_id", "login_id", "手机", "邮箱", "账号", "用户名"].some(
         (k) => name.includes(k) || id.includes(k) || placeholder.includes(k),
       );
@@ -111,10 +113,7 @@ export function analyzeLoginForm(elements: ElementItem[], requests: NetworkReque
   }
 
   if (!intel.formAction && apiList.length > 0) {
-    const loginPost = apiList.find(
-      (r) => r.method === "POST" &&
-        (r.url.includes("login") || r.url.includes("signin") || r.url.includes("passport")),
-    );
+    const loginPost = apiList.find((r) => r.method === "POST" && (r.url.includes("login") || r.url.includes("signin") || r.url.includes("passport")));
     if (loginPost) {
       intel.formAction = loginPost.url;
       intel.method = "POST";
@@ -131,7 +130,10 @@ export function analyzeLoginForm(elements: ElementItem[], requests: NetworkReque
 export class LoginOracle {
   private logger: ILogger;
 
-  constructor(private sessionManager: FileSessionManager, logger?: ILogger) {
+  constructor(
+    private sessionManager: FileSessionManager,
+    logger?: ILogger,
+  ) {
     this.logger = logger ?? new ConsoleLogger();
   }
 
@@ -164,9 +166,7 @@ export class LoginOracle {
       });
       return intel;
     } catch (e) {
-      throw new Error(
-        `登录页面加载失败，请检查 URL 是否正确（通常为 https://site.com/login）。原始错误：${(e as Error).message}`,
-      );
+      throw new Error(`登录页面加载失败，请检查 URL 是否正确（通常为 https://site.com/login）。原始错误：${(e as Error).message}`);
     } finally {
       await lcm.close();
     }
@@ -206,7 +206,7 @@ export class LoginOracle {
 
       await this.tryClickSubmit(page);
 
-      await page.waitForLoadState("networkidle", { timeout: SESSION_VALIDATE_TIMEOUT_MS }).catch(() => { });
+      await page.waitForLoadState("networkidle", { timeout: SESSION_VALIDATE_TIMEOUT_MS }).catch(() => {});
       await page.waitForTimeout(CAPTURE_AFTER_LOGIN_WAIT_MS);
 
       const session = await this.tryCaptureSession(page, verifyUrl);
@@ -256,9 +256,7 @@ export class LoginOracle {
 
     const clicked = await page.evaluate(() => {
       const keywords = ["登录", "登入", "sign in"];
-      const allElements = document.querySelectorAll<HTMLElement>(
-        "a, button, div, span, li",
-      );
+      const allElements = document.querySelectorAll<HTMLElement>("a, button, div, span, li");
       for (const el of allElements) {
         if (el.offsetWidth === 0 || el.offsetHeight === 0) continue;
         const text = el.textContent?.trim().toLowerCase() || "";
@@ -306,11 +304,7 @@ export class LoginOracle {
     return false;
   }
 
-  private async findInputField(
-    page: Page,
-    fieldName: string,
-    _fieldValue: string,
-  ): Promise<{ fill: (v: string) => Promise<void> } | null> {
+  private async findInputField(page: Page, fieldName: string, _fieldValue: string): Promise<{ fill: (v: string) => Promise<void> } | null> {
     const selectors = [
       `input[name="${fieldName}"]`,
       `input[id="${fieldName}"]`,
