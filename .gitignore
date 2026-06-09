@@ -12,3 +12,6 @@ benchmark/results/
 Thumbs.db
 config.json
 captcha_screenshots/
+.codegraph/
+ts-verify-*.txt
+*.test.ts.snap

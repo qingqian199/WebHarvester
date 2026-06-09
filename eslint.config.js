@@ -1,9 +1,11 @@
 const eslint = require("@eslint/js");
 const tseslint = require("typescript-eslint");
+const prettier = require("eslint-config-prettier");
 
 module.exports = tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
+  prettier,
   {
     ignores: ["**/*.js", "dist/", "coverage/", "node_modules/"],
   },
@@ -25,9 +27,10 @@ module.exports = tseslint.config(
         "warn",
         {
           ignoreArrayIndexes: true,
-          ignore: [0, 1, -1, 2, 10, 36, 200, 204, 400, 404, 500, 1000, 3000],
+          ignore: [0, 1, -1, 200, 204, 301, 302, 400, 401, 404, 429, 503, 500, 1000],
           ignoreDefaultValues: true,
           enforceConst: true,
+          ignoreClassFieldInitialValues: true,
         },
       ],
     },

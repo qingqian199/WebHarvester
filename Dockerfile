@@ -1,24 +1,33 @@
-FROM node:20-slim AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
+RUN apk add --no-cache python3 make g++
+COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build
 
-FROM node:20-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-    libdbus-1-3 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 \
-    libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+FROM node:20-alpine
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    && rm -rf /var/cache/apk/*
 
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production && npx playwright install chromium
+COPY package.json package-lock.json ./
+RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 COPY config.json tasks.json ./
-RUN mkdir -p sessions output
+RUN mkdir -p sessions output && \
+    addgroup -S app && adduser -S app -G app && \
+    chown -R app:app /app
 
+USER app
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:9222/json/version',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["node", "dist/index.js"]
