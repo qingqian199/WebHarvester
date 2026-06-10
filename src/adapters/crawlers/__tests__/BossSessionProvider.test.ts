@@ -2,7 +2,7 @@
 
 import { BossTokenService, BossSession } from "../BossSessionProvider";
 
-// 这些 mock 函数在 jest.mock 工厂内创建并赋值，提供给测试访问
+// 这些 mock 函数通过模块导出获取，不在模块作用域声明 var，避免 Bun 全局污染
 var mockLaunch: jest.Mock;
 var mockNewContext: jest.Mock;
 var mockNewPage: jest.Mock;
@@ -17,35 +17,42 @@ var mockBrowserClose: jest.Mock;
 var mockContextClose: jest.Mock;
 
 jest.mock("playwright", () => {
-  mockLaunch = jest.fn();
-  mockNewContext = jest.fn();
-  mockNewPage = jest.fn();
-  mockOn = jest.fn();
-  mockAddInitScript = jest.fn();
-  mockGoto = jest.fn();
-  mockWaitForSelector = jest.fn();
-  mockWaitForTimeout = jest.fn();
-  mockCookies = jest.fn();
-  mockEvaluate = jest.fn();
-  mockBrowserClose = jest.fn();
-  mockContextClose = jest.fn();
+  const launch = jest.fn();
+  const newContext = jest.fn();
+  const newPage = jest.fn();
+  const on = jest.fn();
+  const addInitScript = jest.fn();
+  const goto = jest.fn();
+  const waitForSelector = jest.fn();
+  const waitForTimeout = jest.fn();
+  const cookies = jest.fn();
+  const evaluate = jest.fn();
+  const browserClose = jest.fn();
+  const contextClose = jest.fn();
 
-  const mockPage = {
-    on: mockOn,
-    addInitScript: mockAddInitScript,
-    goto: mockGoto,
-    waitForSelector: mockWaitForSelector,
-    waitForTimeout: mockWaitForTimeout,
-    evaluate: mockEvaluate,
-    context: jest.fn(),
-  };
-  const mockContext = { newPage: mockNewPage, cookies: mockCookies, close: mockContextClose };
-  const mockBrowser = { newContext: mockNewContext, close: mockBrowserClose };
-  mockNewContext.mockReturnValue(mockContext);
-  mockNewPage.mockResolvedValue(mockPage);
-  mockLaunch.mockResolvedValue(mockBrowser);
+  // 通过闭包暴露给测试函数（不创建模块级全局变量，避免 Bun 全局污染）
+  const mockPage = { on, addInitScript, goto, waitForSelector, waitForTimeout, evaluate, context: jest.fn() };
+  const mockContext = { newPage, cookies, close: contextClose };
+  const mockBrowser = { newContext, close: browserClose };
+  newContext.mockReturnValue(mockContext);
+  newPage.mockResolvedValue(mockPage);
+  launch.mockResolvedValue(mockBrowser);
 
-  return { chromium: { launch: mockLaunch } };
+  // 保存引用到模块级变量（供测试用）
+  mockLaunch = launch;
+  mockNewContext = newContext;
+  mockNewPage = newPage;
+  mockOn = on;
+  mockAddInitScript = addInitScript;
+  mockGoto = goto;
+  mockWaitForSelector = waitForSelector;
+  mockWaitForTimeout = waitForTimeout;
+  mockCookies = cookies;
+  mockEvaluate = evaluate;
+  mockBrowserClose = browserClose;
+  mockContextClose = contextClose;
+
+  return { chromium: { launch } };
 });
 
 jest.mock("../../ConsoleLogger", () => ({
@@ -91,8 +98,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-const isBun = typeof process !== "undefined" && !!process.versions?.bun;
-(isBun ? describe.skip : describe)("BossTokenService", () => {
+describe("BossTokenService", () => {
   describe("start() - bootstrap session", () => {
     it("launches browser, creates context/page, navigates to BOSS", async () => {
       mockCookies.mockResolvedValue([{ name: "c", value: "v" }]);
@@ -115,7 +121,7 @@ const isBun = typeof process !== "undefined" && !!process.versions?.bun;
       mockWaitForSelector.mockRejectedValue(new Error("timeout"));
       mockCookies.mockResolvedValue([{ name: "c", value: "v" }]);
       const service = new BossTokenService();
-      await expect(service.start()).resolves.not.toThrow();
+      await service.start();
     });
 
     it("captures __zp_stoken__ from cookies after page load", async () => {
@@ -238,7 +244,7 @@ const isBun = typeof process !== "undefined" && !!process.versions?.bun;
 
     it("does not throw when page is null", async () => {
       const service = new BossTokenService();
-      await expect(service.refreshZpStoken()).resolves.not.toThrow();
+      await service.refreshZpStoken();
     });
   });
 
@@ -263,7 +269,7 @@ const isBun = typeof process !== "undefined" && !!process.versions?.bun;
 
     it("is safe to call when not started", async () => {
       const service = new BossTokenService();
-      await expect(service.stop()).resolves.not.toThrow();
+      await service.stop();
     });
 
     it("is safe to call multiple times", async () => {
